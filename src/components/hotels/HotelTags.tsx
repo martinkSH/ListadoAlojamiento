@@ -52,8 +52,8 @@ export function HotelTagBadges({ tags }: { tags: HotelTag[] }) {
               href={tag.tag_link}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
-              style={{ textDecoration: 'none' }}
+              onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(tag.tag_link!, '_blank') }}
+              style={{ textDecoration: 'none', position: 'relative', zIndex: 10 }}
             >
               {badge}
             </a>
