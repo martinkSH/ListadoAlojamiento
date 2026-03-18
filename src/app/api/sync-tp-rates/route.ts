@@ -70,7 +70,7 @@ WHERE
   AND OSR.PRICE_CODE = 'NR'              -- Tarifa normal (excluye TD=festivos)
   AND tarifas.costFits > 0
   AND tarifas.costFits < 9000            -- Excluir 9999 (bloqueados)
-  AND OSR.DATE_FROM >= '20260501'        -- Temporada 26-27 en adelante
+  AND OSR.DATE_FROM >= '20260101'        -- Temporada 26-27 en adelante
 `
 
 // ── Room type mapping ───────────────────────────────────────────────────────
@@ -181,27 +181,11 @@ export async function POST(req: Request) {
     const matched = matchedRows.length
     console.log(`[tp-rates] Hotels matched: ${matched}/${rates.length}`)
 
-    // Get existing rates to compare
-    const { data: existingRates } = await supabase
+    // Count existing before upsert
+    const { count: countBefore } = await supabase
       .from('tp_rates')
-      .select('supplier_code, option_desc, room_base, season, tp_net_rate') as any
-
-    const existingMap = new Map<string, number>()
-    for (const r of (existingRates ?? [])) {
-      existingMap.set(`${r.supplier_code}__${r.option_desc}__${r.room_base}__${r.season}`, r.tp_net_rate)
-    }
-
-    let ratesNew = 0
-    let ratesUpdated = 0
-    let ratesUnchanged = 0
-
-    for (const r of matchedRows) {
-      const key = `${r.supplier_code}__${r.option_desc}__${r.room_base}__${r.season}`
-      const existing = existingMap.get(key)
-      if (existing === undefined) ratesNew++
-      else if (existing !== r.tp_net_rate) ratesUpdated++
-      else ratesUnchanged++
-    }
+      .select('*', { count: 'exact', head: true })
+      .not('hotel_id', 'is', null) as any
 
     // Upsert in batches of 500
     const BATCH = 500
@@ -212,6 +196,16 @@ export async function POST(req: Request) {
         .upsert(chunk, { onConflict: 'supplier_code,option_desc,room_base,season' })
       if (error) throw new Error(`Upsert error: ${error.message}`)
     }
+
+    // Count after upsert
+    const { count: countAfter } = await supabase
+      .from('tp_rates')
+      .select('*', { count: 'exact', head: true })
+      .not('hotel_id', 'is', null) as any
+
+    const ratesNew = Math.max(0, (countAfter ?? 0) - (countBefore ?? 0))
+    const ratesUnchanged = matchedRows.length - ratesNew
+    const ratesUpdated = 0 // upsert doesn't distinguish updated from unchanged easily
 
     // Log sync
     await supabase.from('tp_sync_log').insert({
