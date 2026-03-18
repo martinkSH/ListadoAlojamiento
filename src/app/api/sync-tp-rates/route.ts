@@ -115,6 +115,56 @@ export async function POST(req: Request) {
     const result = await pool.request().query(TP_RATES_QUERY)
     const pool2 = await sql.connect(config)
 
+    const TP_PC_QUERY = `
+SELECT
+  OPT.SUPPLIER    AS supplierCode,
+  OPT.DESCRIPTION AS optionDesc,
+  OSR.DATE_FROM   AS dateFrom,
+  OSR.DATE_TO     AS dateTo,
+  tarifas.servItem AS roomType,
+  tarifas.costFits AS fitsCost
+FROM (
+  SELECT OPD.OSR_ID, '1SS' AS servItem, ssFC.SS AS costFits
+  FROM OPD
+  JOIN OPD AS ssFC ON ssFC.RATE_TYPE='FC' AND ssFC.AGE_CATEGORY='AD'
+  JOIN OSR ON OSR.OSR_ID = OPD.OSR_ID
+  JOIN OPT ON OPT.OPT_ID = OSR.OPT_ID
+  JOIN SOD ON SOD.SOD_ID = OPT.SOD_ID
+  WHERE OPD.OSR_ID = ssFC.OSR_ID AND SOD.SINGLE_AVAIL = 1
+  GROUP BY OPD.OSR_ID, ssFC.SS
+  UNION ALL
+  SELECT OPD.OSR_ID, '2DB' AS servItem, dbFC.TW AS costFits
+  FROM OPD
+  JOIN OPD AS dbFC ON dbFC.RATE_TYPE='FC' AND dbFC.AGE_CATEGORY='AD'
+  JOIN OSR ON OSR.OSR_ID = OPD.OSR_ID
+  JOIN OPT ON OPT.OPT_ID = OSR.OPT_ID
+  JOIN SOD ON SOD.SOD_ID = OPT.SOD_ID
+  WHERE OPD.OSR_ID = dbFC.OSR_ID AND SOD.DOUBLE_AVAIL = 1
+  GROUP BY OPD.OSR_ID, dbFC.TW
+  UNION ALL
+  SELECT OPD.OSR_ID, '3TR' AS servItem, trFC.TR AS costFits
+  FROM OPD
+  JOIN OPD AS trFC ON trFC.RATE_TYPE='FC' AND trFC.AGE_CATEGORY='AD'
+  JOIN OSR ON OSR.OSR_ID = OPD.OSR_ID
+  JOIN OPT ON OPT.OPT_ID = OSR.OPT_ID
+  JOIN SOD ON SOD.SOD_ID = OPT.SOD_ID
+  WHERE OPD.OSR_ID = trFC.OSR_ID AND SOD.TRIPLE_AVAIL = 1
+  GROUP BY OPD.OSR_ID, trFC.TR
+) AS tarifas
+JOIN OSR ON OSR.OSR_ID = tarifas.OSR_ID
+JOIN OPT ON OPT.OPT_ID = OSR.OPT_ID
+JOIN SOD ON SOD.SOD_ID = OPT.SOD_ID
+WHERE
+  OPT.SUPPLIER       = '1743'
+  AND OPT.AC         IN ('Y','A')
+  AND OSR.PRICE_CODE = 'NR'
+  AND tarifas.costFits > 0
+  AND tarifas.costFits < 9000
+  AND OSR.DATE_FROM  >= '20260401'
+  AND OSR.DATE_TO    >= '20260401'
+`
+
+
     const rows = result.recordset as any[]
     console.log(`[tp-rates] Raw rows from TP: ${rows.length}`)
 
