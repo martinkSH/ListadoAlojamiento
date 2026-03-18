@@ -37,14 +37,15 @@ const CAT_STYLES: Record<string, { bg: string; pill: string; text: string }> = {
 const CAT_ORDER = ['Inn/Apart','Inn','Inn/Comfort','Comfort','Superior','Superior+','Luxury','Estancia sup','Estancia lux','Otros']
 
 const REGIONS = [
-  { key: 'AR', label: 'Argentina',  flag: '🇦🇷', countries: ['AR'] },
-  { key: 'EX', label: 'Exterior',   flag: '🌎',  countries: ['CL','PE','UY','PY','CO','EC','BO'] },
-  { key: 'BR', label: 'Brasil',     flag: '🇧🇷', countries: ['BR'] },
+  { key: 'AR', label: 'Argentina',       flag: '🇦🇷', countries: ['AR'] },
+  { key: 'EX', label: 'Exterior',        flag: '🌎',  countries: ['CL','PE','UY','PY','CO','EC','BO'] },
+  { key: 'CA', label: 'Carretera Austral', flag: '🛣️',  countries: ['CA'] },
+  { key: 'BR', label: 'Brasil',          flag: '🇧🇷', countries: ['BR'] },
 ]
 
 const COUNTRY_FLAGS: Record<string, string> = {
   AR:'🇦🇷', CL:'🇨🇱', BR:'🇧🇷', PE:'🇵🇪', UY:'🇺🇾',
-  PY:'🇵🇾', CO:'🇨🇴', EC:'🇪🇨', BO:'🇧🇴',
+  PY:'🇵🇾', CO:'🇨🇴', EC:'🇪🇨', BO:'🇧🇴', CA:'🛣️',
 }
 
 // ── Sortable row ────────────────────────────────────────
