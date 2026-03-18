@@ -158,7 +158,7 @@ export default function HotelesPage() {
 
     const { data: h } = await supabase
       .from('hotels')
-      .select('id,name,category,priority,distance_center,is_direct,is_family,net_rate_validity,destination_id,rates(room_base,pc_rate,net_rate,season),hotel_tags(id,tag_type,tag_value)')
+      .select('id,name,category,priority,distance_center,is_direct,is_family,net_rate_validity,destination_id,rates(room_base,pc_rate,net_rate,season),hotel_tags(id,tag_type,tag_value,tag_link)')
       .eq('active', true).in('destination_id', destIds).order('priority')
     setHotels((h ?? []) as Hotel[])
     setLoading(false)
