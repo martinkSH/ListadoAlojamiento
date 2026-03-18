@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { HotelTagBadges, type HotelTag } from '@/components/hotels/HotelTags'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -126,6 +126,26 @@ export default function HotelesPage() {
   const [region, setRegion] = useState('AR')
   const [search, setSearch] = useState('')
   const [viewDate, setViewDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [dateRates, setDateRates] = useState<Record<string, { sgl_nt: number|null, dbl_nt: number|null, tpl_nt: number|null }>>({})
+  const [loadingRates, setLoadingRates] = useState(false)
+
+  async function fetchRatesForDate(date: string) {
+    setLoadingRates(true)
+    try {
+      const res = await fetch(`/api/rates-for-date?date=${date}`)
+      const json = await res.json()
+      const map: Record<string, any> = {}
+      for (const r of (json.rates ?? [])) map[r.hotel_id] = r
+      setDateRates(map)
+    } catch (e) {
+      console.error('fetchRatesForDate error', e)
+    }
+    setLoadingRates(false)
+  }
+
+  useEffect(() => {
+    fetchRatesForDate(viewDate)
+  }, [viewDate])
   const [isAdmin, setIsAdmin] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -321,6 +341,7 @@ export default function HotelesPage() {
             >
               Hoy
             </button>
+            {loadingRates && <span style={{ fontSize: '10px', color: '#b8a99a' }}>actualizando...</span>}
           </div>
           <div style={{ marginLeft: 'auto', fontSize: '11px', color: C.navMuted, fontWeight: 500 }}>
             {filteredDests.length} destinos · {totalHotels} hoteles
