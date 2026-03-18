@@ -11,11 +11,13 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient()
 
-  const { data: request, error } = await supabase
+  const { data, error } = await supabase
     .from('availability_requests')
     .select(`*, hotels ( name )`)
     .eq('decline_token', token)
     .single()
+
+  const request = data as any
 
   if (error || !request) {
     return new NextResponse(tokenPage('error', 'El link no es válido o ya fue usado.'), {
