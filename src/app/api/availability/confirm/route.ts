@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   const supabase = createAdminClient()
 
   // Buscar pedido por confirm_token
-  const { data: request, error } = await supabase
+  const { data, error } = await supabase
     .from('availability_requests')
     .select(`
       *,
@@ -20,6 +20,8 @@ export async function GET(req: NextRequest) {
     `)
     .eq('confirm_token', token)
     .single()
+
+  const request = data as any
 
   if (error || !request) {
     return new NextResponse(tokenPage('error', 'El link no es válido o ya fue usado.'), {
