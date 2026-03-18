@@ -188,7 +188,8 @@ export default function HotelesPage() {
     navText: '#2c2420', navMuted: '#7a6e65', labelMuted: '#9a8d82',
     topbar: '#ffffff', topbarBorder: '#c4bbb0',
     colHeader: '#ddd5cb', colHeaderBorder: '#bdb5ac', colHeaderText: '#5a4e45',
-    destHeader: '#cec6bc', destHeaderText: '#2c2420', destMuted: '#7a6e65',
+    destHeader: '#cec6bc', destHeaderBorder: '#bdb5ac',
+    destHeaderText: '#2c2420', destMuted: '#7a6e65',
   }
 
   return (
