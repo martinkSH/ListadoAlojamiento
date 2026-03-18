@@ -119,12 +119,15 @@ export async function POST(req: Request) {
     console.log(`[tp-rates] Raw rows from TP: ${rows.length}`)
 
     // Group and get max rate per supplier + option + room_base
+    // Keep all periods — one row per supplier+option+room+date_from
     const rateMap = new Map<string, {
       supplier_code: number
       option_desc: string
       option_comment: string
       room_base: string
       tp_net_rate: number
+      date_from: string
+      date_to: string
     }>()
 
     for (const row of rows) {
@@ -134,17 +137,25 @@ export async function POST(req: Request) {
       const cost = Number(row.fitsCost)
       if (!cost || cost <= 0 || cost >= 9000) continue
 
-      const key = `${row.supplierCode}__${row.optionDesc}__${roomBase}`
-      const existing = rateMap.get(key)
+      const dateFrom = row.dateFrom instanceof Date
+        ? row.dateFrom.toISOString().split('T')[0]
+        : String(row.dateFrom ?? '').slice(0, 10)
+      const dateTo = row.dateTo instanceof Date
+        ? row.dateTo.toISOString().split('T')[0]
+        : String(row.dateTo ?? '').slice(0, 10)
 
-      // Keep the highest rate (tarifa más alta no festiva)
-      if (!existing || cost > existing.tp_net_rate) {
+      if (!dateFrom) continue
+
+      const key = `${row.supplierCode}__${row.optionDesc}__${roomBase}__${dateFrom}`
+      if (!rateMap.has(key)) {
         rateMap.set(key, {
           supplier_code: Number(row.supplierCode),
           option_desc: String(row.optionDesc ?? '').trim(),
           option_comment: String(row.optionComment ?? '').trim(),
           room_base: roomBase,
           tp_net_rate: cost,
+          date_from: dateFrom,
+          date_to: dateTo,
         })
       }
     }
@@ -172,6 +183,8 @@ export async function POST(req: Request) {
       option_comment: r.option_comment,
       room_base: r.room_base,
       tp_net_rate: r.tp_net_rate,
+      date_from: r.date_from,
+      date_to: r.date_to,
       season: '26-27',
       synced_at: startedAt,
     }))
@@ -193,7 +206,7 @@ export async function POST(req: Request) {
       const chunk = matchedRows.slice(i, i + BATCH)
       const { error } = await supabase
         .from('tp_rates')
-        .upsert(chunk, { onConflict: 'supplier_code,option_desc,room_base,season' })
+        .upsert(chunk, { onConflict: 'supplier_code,option_desc,room_base,date_from' })
       if (error) throw new Error(`Upsert error: ${error.message}`)
     }
 
@@ -207,16 +220,27 @@ export async function POST(req: Request) {
     const ratesUnchanged = matchedRows.length - ratesNew
     const ratesUpdated = 0 // upsert doesn't distinguish updated from unchanged easily
 
-    // Update NT rates in the rates table using the room mapping
+    // Update NT rates using the highest rate for the season per mapped room
     const { data: roomMaps } = await supabase
       .from('hotel_tp_room_map')
       .select('hotel_id, option_desc') as any
 
     let ntUpdated = 0
     for (const map of (roomMaps ?? [])) {
-      const sgl = matchedRows.find(r => r.hotel_id === map.hotel_id && r.option_desc === map.option_desc && r.room_base === 'SGL')
-      const dbl = matchedRows.find(r => r.hotel_id === map.hotel_id && r.option_desc === map.option_desc && r.room_base === 'DBL')
-      const tpl = matchedRows.find(r => r.hotel_id === map.hotel_id && r.option_desc === map.option_desc && r.room_base === 'TPL')
+      // Get max rate per room_base for this hotel+option across all periods
+      const getMaxRate = (base: string) => {
+        const matching = matchedRows.filter(r =>
+          r.hotel_id === map.hotel_id &&
+          r.option_desc === map.option_desc &&
+          r.room_base === base
+        )
+        if (!matching.length) return null
+        return matching.reduce((max, r) => r.tp_net_rate > max.tp_net_rate ? r : max)
+      }
+
+      const sgl = getMaxRate('SGL')
+      const dbl = getMaxRate('DBL')
+      const tpl = getMaxRate('TPL')
 
       if (!sgl && !dbl && !tpl) continue
 
@@ -252,6 +276,7 @@ export async function POST(req: Request) {
       synced_at: startedAt,
       rates_total: matchedRows.length,
       hotels_matched: matched,
+      hotels_unique: new Set(matchedRows.map((r: any) => r.hotel_id)).size,
       nt_updated: ntUpdated,
     })
 
