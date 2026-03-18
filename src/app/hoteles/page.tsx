@@ -44,7 +44,7 @@ const REGIONS = [
 const CA_CODES = ['Caleta Tor','Chaitén','Puelo','Hornopirén','La Junta','Aysen','Puyuhuapi','Coyhaique','Villa C. C','Puerto Tra','Chile Chic','Puerto Gua','Cochrane',"Villa O'Hi"]
 const COUNTRY_FLAGS: Record<string, string> = { AR:'🇦🇷',CL:'🇨🇱',BR:'🇧🇷',PE:'🇵🇪',UY:'🇺🇾',PY:'🇵🇾',CO:'🇨🇴',EC:'🇪🇨',BO:'🇧🇴' }
 
-const GRID = '18px 20px 1fr 68px 58px 50px 58px 50px'
+const GRID = '18px 20px 1fr 68px 58px 50px 58px 50px 58px 50px'
 
 function HotelRow({ hotel, idx, isAdmin, onNavigate }: {
   hotel: Hotel; idx: number; isAdmin: boolean; onNavigate: (id: string) => void
@@ -55,7 +55,7 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate }: {
 
   const rates = hotel.rates ?? []
   const r = (base: string) => rates.find(r => r.room_base === base && r.season === '26-27')
-  const sgl = r('SGL'), dbl = r('DBL')
+  const sgl = r('SGL'), dbl = r('DBL'), tpl = r('TPL')
   const isExpired = hotel.net_rate_validity ? new Date(hotel.net_rate_validity) < new Date() : false
   const baseBg = idx % 2 === 0 ? '#ffffff' : '#f9f6f2'
 
@@ -86,7 +86,7 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate }: {
       <div style={{ fontSize: '10px', color: CAT_STYLES[hotel.category]?.text ?? '#333', textAlign: 'right', paddingRight: '4px', fontWeight: 500 }}>
         {hotel.category.replace('Inn/Apart','Inn/Apt').replace('Estancia sup','Est.sup').replace('Estancia lux','Est.lux')}
       </div>
-      {[sgl?.pc_rate, sgl?.net_rate, dbl?.pc_rate, dbl?.net_rate].map((val, i) => (
+      {[sgl?.pc_rate, sgl?.net_rate, dbl?.pc_rate, dbl?.net_rate, tpl?.pc_rate, tpl?.net_rate].map((val, i) => (
         <div key={i} style={{ fontSize: '12px', color: i % 2 === 0 ? '#2c2420' : '#a09080', textAlign: 'right', fontFamily: 'monospace' }}>
           {val != null ? `$${val}` : <span style={{ color: '#ccc8c0' }}>—</span>}
         </div>
@@ -223,6 +223,9 @@ export default function HotelesPage() {
           <a href="/hoteles/nuevo" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 14px', fontSize: '12px', color: C.navMuted, textDecoration: 'none', borderLeft: '2px solid transparent' }}>
             <span style={{ fontWeight: 600 }}>＋</span> Nuevo hotel
           </a>
+          <a href="/ajustes" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 14px', fontSize: '12px', color: C.navMuted, textDecoration: 'none', borderLeft: '2px solid transparent' }}>
+            <span>⚙</span> Ajuste tarifas
+          </a>
           <div style={{ margin: '8px 0', borderTop: `0.5px solid ${C.sidebarBorder}` }} />
           <div style={{ padding: '6px 14px 3px', fontSize: '9px', color: C.labelMuted, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600 }}>Modo</div>
           <button onClick={() => setIsAdmin(a => !a)} style={{
@@ -265,8 +268,8 @@ export default function HotelesPage() {
 
         {/* Column header — FIJO, no scrollea */}
         <div style={{ flexShrink: 0, display: 'grid', gridTemplateColumns: GRID, padding: '6px 14px', background: C.colHeader, borderBottom: `1px solid ${C.colHeaderBorder}` }}>
-          {['', '#', 'Hotel', 'Categ.', 'SGL PC', 'NT', 'DBL PC', 'NT'].map((h, i) => (
-            <div key={i} style={{ fontSize: '10px', fontWeight: 700, color: C.colHeaderText, letterSpacing: '0.07em', textTransform: 'uppercase', textAlign: i > 2 ? 'right' : 'left' }}>{h}</div>
+          {['', '#', 'Hotel', 'Categ.', 'SGL PC', 'NT', 'DBL PC', 'NT', 'TPL PC', 'NT'].map((h, i) => (
+            <div key={i} style={{ fontSize: '10px', fontWeight: 700, color: C.colHeaderText, letterSpacing: '0.07em', textTransform: 'uppercase', textAlign: i > 2 ? 'right' as const : 'left' as const }}>{h}</div>
           ))}
         </div>
 
