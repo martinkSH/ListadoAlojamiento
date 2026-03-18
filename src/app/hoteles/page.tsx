@@ -177,8 +177,25 @@ export default function HotelesPage() {
     }
     if (!search) return list
     const q = search.toLowerCase()
-    return list.filter(d => d.code.toLowerCase().includes(q) || d.name.toLowerCase().includes(q))
+    // Match destinations by code/name OR destinations that have hotels matching the query
+    return list.filter(d => {
+      if (d.code.toLowerCase().includes(q) || d.name.toLowerCase().includes(q)) return true
+      // Check if any hotel in this destination matches
+      const destHotels = hotels.filter(h => h.destination_id === d.id)
+      return destHotels.some(h => {
+        const { name: hotelName } = splitHotelName(h.name)
+        return hotelName.toLowerCase().includes(q) || h.name.toLowerCase().includes(q)
+      })
+    })
   })()
+
+  // If searching, also filter hotels within destinations to only show matching ones
+  function getFilteredHotels(destId: string) {
+    const destHotels = hotels.filter(h => h.destination_id === destId)
+    if (!search) return destHotels
+    const q = search.toLowerCase()
+    return destHotels.filter(h => h.name.toLowerCase().includes(q))
+  }
 
   function getHotels(destId: string) { return hotels.filter(h => h.destination_id === destId) }
 
@@ -279,7 +296,7 @@ export default function HotelesPage() {
           <div style={{ position: 'relative', flex: 1, maxWidth: '340px' }}>
             <span style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: '#a09080', fontSize: '13px', pointerEvents: 'none' }}>⌕</span>
             <input
-              type="text" placeholder="Buscar destino (BUE, Bariloche...)"
+              type="text" placeholder="Buscar destino o hotel..."
               value={search} onChange={e => setSearch(e.target.value)}
               style={{ width: '100%', padding: '6px 10px 6px 28px', fontSize: '12px', border: `1px solid ${C.topbarBorder}`, borderRadius: '6px', fontFamily: 'inherit', outline: 'none', background: '#faf7f3', color: '#2c2420', boxSizing: 'border-box' }}
             />
