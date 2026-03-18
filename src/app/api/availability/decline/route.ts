@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase
     .from('availability_requests')
-    .select(`*, hotels ( name )`)
+    .select('*, hotels ( name )')
     .eq('decline_token', token)
     .single()
 
@@ -38,13 +38,13 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  await supabase
+  await (supabase as any)
     .from('availability_requests')
     .update({ status: 'unavailable', responded_at: new Date().toISOString() })
     .eq('id', request.id)
 
   const html = availabilityResultEmail({
-    hotelName: (request.hotels as any).name,
+    hotelName: request.hotels?.name ?? '',
     status: 'unavailable',
     checkIn: new Date(request.check_in),
     checkOut: new Date(request.check_out),
@@ -56,10 +56,10 @@ export async function GET(req: NextRequest) {
   try {
     await sendMail({
       to: request.operator_email,
-      subject: `✗ Sin disponibilidad — ${(request.hotels as any).name}`,
+      subject: `✗ Sin disponibilidad — ${request.hotels?.name}`,
       html,
     })
-    await supabase
+    await (supabase as any)
       .from('availability_requests')
       .update({ operator_notified_at: new Date().toISOString() })
       .eq('id', request.id)
