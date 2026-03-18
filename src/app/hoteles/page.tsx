@@ -125,6 +125,7 @@ export default function HotelesPage() {
   const [hotels, setHotels] = useState<Hotel[]>([])
   const [region, setRegion] = useState('AR')
   const [search, setSearch] = useState('')
+  const [viewDate, setViewDate] = useState(() => new Date().toISOString().split('T')[0])
   const [isAdmin, setIsAdmin] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -301,6 +302,25 @@ export default function HotelesPage() {
               style={{ width: '100%', padding: '6px 10px 6px 28px', fontSize: '12px', border: `1px solid ${C.topbarBorder}`, borderRadius: '6px', fontFamily: 'inherit', outline: 'none', background: '#faf7f3', color: '#2c2420', boxSizing: 'border-box' }}
             />
             {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#a09080', fontSize: '13px', padding: 0 }}>✕</button>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
+            <span style={{ fontSize: '10px', color: '#9a8d82', whiteSpace: 'nowrap' }}>Ver tarifas al:</span>
+            <input
+              type="date"
+              value={viewDate}
+              onChange={e => setViewDate(e.target.value)}
+              style={{
+                fontSize: '11px', padding: '4px 8px', border: '1px solid #ddd5cb',
+                borderRadius: '6px', background: '#faf7f3', color: '#2c2420',
+                fontFamily: "'Inter','Helvetica Neue',system-ui,sans-serif", outline: 'none',
+              }}
+            />
+            <button
+              onClick={() => setViewDate(new Date().toISOString().split('T')[0])}
+              style={{ fontSize: '10px', color: '#9a8d82', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
+            >
+              Hoy
+            </button>
           </div>
           <div style={{ marginLeft: 'auto', fontSize: '11px', color: C.navMuted, fontWeight: 500 }}>
             {filteredDests.length} destinos · {totalHotels} hoteles
