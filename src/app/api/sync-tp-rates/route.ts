@@ -379,7 +379,7 @@ WHERE
         let maxRate = 0
         let maxDateFrom = ''
         let maxDateTo = ''
-        for (const [key, val] of pcRateMap.entries()) {
+        for (const [key, val] of Array.from(pcRateMap.entries())) {
           if (val.destCode === destCodeForHotel && val.cat === hotel.category && val.roomBase === base) {
             if (val.cost > maxRate) {
               maxRate = val.cost
