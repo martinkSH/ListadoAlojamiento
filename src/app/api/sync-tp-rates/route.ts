@@ -113,7 +113,7 @@ export async function POST(req: Request) {
 
     const pool = await sql.connect(config)
     const result = await pool.request().query(TP_RATES_QUERY)
-    await pool.close()
+    const pool2 = await sql.connect(config)
 
     const rows = result.recordset as any[]
     console.log(`[tp-rates] Raw rows from TP: ${rows.length}`)
@@ -264,6 +264,96 @@ export async function POST(req: Request) {
 
     console.log(`[tp-rates] NT rates updated: ${ntUpdated}`)
 
+    // ── Fetch and process PC rates ──────────────────────────────────────────
+    const pcResult = await pool2.request().query(TP_PC_QUERY)
+    const pcRows = pcResult.recordset as any[]
+    console.log(`[tp-rates] PC rows from TP: ${pcRows.length}`)
+
+    // Build category map: 'INN' → 'Inn', 'COMFORT' → 'Comfort', etc.
+    const CAT_MAP: Record<string, string> = {
+      'INN': 'Inn', 'COMFORT': 'Comfort', 'SUPERIOR': 'Superior',
+      'LUXURY': 'Luxury', 'APART': 'Inn/Apart',
+    }
+
+    // Parse option_desc: "COMFORT BUE" → { cat: 'Comfort', destCode: 'BUE' }
+    function parseOptionDesc(desc: string): { cat: string; destCode: string } | null {
+      const parts = desc.trim().split(' ')
+      if (parts.length < 2) return null
+      const destCode = parts[parts.length - 1]
+      const catRaw = parts.slice(0, parts.length - 1).join(' ').replace('/ ', '/').trim()
+      const cat = CAT_MAP[catRaw] ?? CAT_MAP[parts[0]] ?? null
+      if (!cat) return null
+      return { cat, destCode }
+    }
+
+    // Get all destinations
+    const { data: allDests } = await supabase.from('destinations').select('id, code') as any
+    const destMap = new Map<string, string>()
+    for (const d of (allDests ?? [])) destMap.set(d.code, d.id)
+
+    // Get all hotels with category and destination
+    const { data: allHotels } = await supabase
+      .from('hotels')
+      .select('id, category, destination_id')
+      .eq('active', true) as any
+
+    // Build PC rate map: destCode+cat+roomBase+dateFrom → rate
+    const pcRateMap = new Map<string, any>()
+    for (const row of pcRows) {
+      const roomBase = ROOM_MAP[row.roomType]
+      if (!roomBase) continue
+      const cost = Number(row.fitsCost)
+      if (!cost || cost <= 0) continue
+      const parsed = parseOptionDesc(String(row.optionDesc ?? ''))
+      if (!parsed) continue
+      const dateFrom = row.dateFrom instanceof Date
+        ? row.dateFrom.toISOString().split('T')[0]
+        : String(row.dateFrom ?? '').slice(0, 10)
+      const dateTo = row.dateTo instanceof Date
+        ? row.dateTo.toISOString().split('T')[0]
+        : String(row.dateTo ?? '').slice(0, 10)
+      const key = `${parsed.destCode}__${parsed.cat}__${roomBase}__${dateFrom}`
+      pcRateMap.set(key, { ...parsed, roomBase, cost, dateFrom, dateTo })
+    }
+
+    // Update pc_rate in rates table for each hotel
+    let pcUpdated = 0
+    for (const hotel of (allHotels ?? [])) {
+      const destCode = destMap.get(hotel.destination_id) 
+      // Need dest code from id - rebuild reverse map
+      const destCodeForHotel = Array.from(destMap.entries()).find(([code, id]) => id === hotel.destination_id)?.[0]
+      if (!destCodeForHotel || !hotel.category) continue
+
+      // Find max PC rate for this dest+category across all periods for season
+      for (const base of ['SGL', 'DBL', 'TPL']) {
+        let maxRate = 0
+        let maxDateFrom = ''
+        let maxDateTo = ''
+        for (const [key, val] of pcRateMap.entries()) {
+          if (val.destCode === destCodeForHotel && val.cat === hotel.category && val.roomBase === base) {
+            if (val.cost > maxRate) {
+              maxRate = val.cost
+              maxDateFrom = val.dateFrom
+              maxDateTo = val.dateTo
+            }
+          }
+        }
+        if (!maxRate) continue
+
+        const { error } = await supabase
+          .from('rates')
+          .upsert({
+            hotel_id: hotel.id,
+            room_base: base,
+            season: '26-27',
+            pc_rate: maxRate,
+          }, { onConflict: 'hotel_id,season,room_base' })
+        if (!error) pcUpdated++
+      }
+    }
+
+    console.log(`[tp-rates] PC rates updated: ${pcUpdated}`)
+
     // Log sync
     await supabase.from('tp_sync_log').insert({
       rates_updated: matchedRows.length,
@@ -278,6 +368,7 @@ export async function POST(req: Request) {
       hotels_matched: matched,
       hotels_unique: new Set(matchedRows.map((r: any) => r.hotel_id)).size,
       nt_updated: ntUpdated,
+      pc_updated: pcUpdated,
     })
 
   } catch (err: any) {
