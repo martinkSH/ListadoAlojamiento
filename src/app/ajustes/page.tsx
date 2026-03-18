@@ -77,7 +77,7 @@ export default function AjustesPage() {
       const res = await fetch('/api/sync-tp-rates', { method: 'POST' })
       const data = await res.json()
       if (data.ok) {
-        setSyncResult({ ok: true, msg: `✓ Sync completado — ${data.rates_updated} tarifas · ${data.hotels_matched} hoteles · ${data.synced_at}` })
+        setSyncResult({ ok: true, msg: `✓ ${data.rates_total} tarifas · ${data.hotels_matched} hoteles · ${data.rates_new} nuevas · ${data.rates_updated} actualizadas · ${data.rates_unchanged} sin cambios` })
       } else {
         setSyncResult({ ok: false, msg: `Error: ${data.error}` })
       }
@@ -95,7 +95,7 @@ export default function AjustesPage() {
       .select('category')
       .eq('destination_id', id)
       .eq('active', true) as any
-   const cats = Array.from(new Set((data ?? []).map((h: any) => h.category)))
+    const cats = [...new Set((data ?? []).map((h: any) => h.category))]
       .sort((a: any, b: any) => CATEGORIES.indexOf(a) - CATEGORIES.indexOf(b))
     setAvailableCategories(cats as string[])
     if (cats.length > 0) setCategory(cats[0] as string)
