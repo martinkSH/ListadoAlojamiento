@@ -207,9 +207,42 @@ export async function POST(req: Request) {
     const ratesUnchanged = matchedRows.length - ratesNew
     const ratesUpdated = 0 // upsert doesn't distinguish updated from unchanged easily
 
+    // Update NT rates in the rates table using the room mapping
+    const { data: roomMaps } = await supabase
+      .from('hotel_tp_room_map')
+      .select('hotel_id, option_desc') as any
+
+    let ntUpdated = 0
+    for (const map of (roomMaps ?? [])) {
+      const sgl = matchedRows.find(r => r.hotel_id === map.hotel_id && r.option_desc === map.option_desc && r.room_base === 'SGL')
+      const dbl = matchedRows.find(r => r.hotel_id === map.hotel_id && r.option_desc === map.option_desc && r.room_base === 'DBL')
+      const tpl = matchedRows.find(r => r.hotel_id === map.hotel_id && r.option_desc === map.option_desc && r.room_base === 'TPL')
+
+      if (!sgl && !dbl && !tpl) continue
+
+      const rateRows = [
+        sgl ? { hotel_id: map.hotel_id, room_base: 'SGL', season: '26-27', net_rate: sgl.tp_net_rate } : null,
+        dbl ? { hotel_id: map.hotel_id, room_base: 'DBL', season: '26-27', net_rate: dbl.tp_net_rate } : null,
+        tpl ? { hotel_id: map.hotel_id, room_base: 'TPL', season: '26-27', net_rate: tpl.tp_net_rate } : null,
+      ].filter(Boolean)
+
+      for (const rateRow of rateRows) {
+        const { error } = await supabase
+          .from('rates')
+          .upsert(rateRow, { onConflict: 'hotel_id,season,room_base' })
+        if (error) {
+          console.error(`[tp-rates] rates upsert error:`, error.message, JSON.stringify(rateRow))
+        } else {
+          ntUpdated++
+        }
+      }
+    }
+
+    console.log(`[tp-rates] NT rates updated: ${ntUpdated}`)
+
     // Log sync
     await supabase.from('tp_sync_log').insert({
-      rates_updated: upsertRows.length,
+      rates_updated: matchedRows.length,
       hotels_matched: matched,
       status: 'ok',
     })
@@ -219,9 +252,7 @@ export async function POST(req: Request) {
       synced_at: startedAt,
       rates_total: matchedRows.length,
       hotels_matched: matched,
-      rates_new: ratesNew,
-      rates_updated: ratesUpdated,
-      rates_unchanged: ratesUnchanged,
+      nt_updated: ntUpdated,
     })
 
   } catch (err: any) {
