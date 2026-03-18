@@ -28,7 +28,7 @@ export default async function HotelDetailPage({ params }: { params: { id: string
   const tpRates = (hotel.tp_rates ?? []) as any[]
   const tpSyncedAt = tpRates[0]?.synced_at ? new Date(tpRates[0].synced_at).toLocaleDateString('es-AR') : null
   const r = (base: string, season: string) => rates.find((r: any) => r.room_base === base && r.season === season)
-  const seasons = ['26-27', '24-25']
+  const seasons = ['26-27']
   const bases = ['SGL', 'DBL', 'TPL']
 
   const CAT_COLORS: Record<string, string> = {
