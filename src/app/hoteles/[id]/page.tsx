@@ -3,6 +3,12 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import DeleteHotelButton from '@/components/hotels/DeleteHotelButton'
 
+function splitHotelName(fullName: string): { name: string; desc: string } {
+  const idx = fullName.search(/\s*\(/)
+  if (idx === -1) return { name: fullName, desc: '' }
+  return { name: fullName.slice(0, idx).trim(), desc: fullName.slice(idx).trim() }
+}
+
 export default async function HotelDetailPage({ params }: { params: { id: string } }) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
