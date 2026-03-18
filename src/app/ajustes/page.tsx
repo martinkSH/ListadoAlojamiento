@@ -77,7 +77,7 @@ export default function AjustesPage() {
       const res = await fetch('/api/sync-tp-rates', { method: 'POST' })
       const data = await res.json()
       if (data.ok) {
-        setSyncResult({ ok: true, msg: `✓ Sync OK — ${data.rates_total} tarifas · ${data.hotels_matched} hoteles · ${data.nt_updated} NT actualizadas en listado` })
+        setSyncResult({ ok: true, msg: `✓ Sync OK — ${data.hotels_unique} hoteles · ${data.nt_updated} NT · ${data.pc_updated ?? 0} PC actualizadas` })
       } else {
         setSyncResult({ ok: false, msg: `Error: ${data.error}` })
       }
