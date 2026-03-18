@@ -51,7 +51,7 @@ export default function EditarHotelPage({ params }: { params: { id: string } }) 
     distance_center: '', contact_email: '', contact_name: '', contact_phone: '',
     closing_date: '', net_rate_validity: '', pc_rate_validity: '',
     is_family: false, family_type: '', is_direct: true, platform_name: '',
-    notes: '', season_open: '',
+    notes: '', season_open: '', closing_info: '',
   })
 
   const [rates, setRates] = useState<Record<string, Record<string, { pc: string; nt: string; id?: string }>>>({
@@ -93,6 +93,7 @@ export default function EditarHotelPage({ params }: { params: { id: string } }) 
         platform_name: hotel.platform_name ?? '',
         notes: hotel.notes ?? '',
         season_open: hotel.season_open ?? '',
+        closing_info: hotel.closing_info ?? '',
       })
 
       const newRates = {
@@ -147,6 +148,7 @@ export default function EditarHotelPage({ params }: { params: { id: string } }) 
       platform_name: form.is_direct ? null : (form.platform_name || null),
       notes: form.notes || null,
       season_open: form.season_open || null,
+      closing_info: form.closing_info || null,
     }).eq('id', params.id) as any
 
     if (hotelErr) { setError('Error al guardar: ' + hotelErr.message); setSaving(false); return }
@@ -320,8 +322,16 @@ export default function EditarHotelPage({ params }: { params: { id: string } }) 
             </div>
           </Grid2>
           <div style={{ marginTop: '12px' }}>
-            <Label text="Fecha de cierre" />
-            <input type="date" value={form.closing_date} onChange={e => setField('closing_date', e.target.value)} style={{ ...inputSx, width: '200px' }} />
+            <Label text="Fecha / período de cierre" />
+            <input
+              value={form.closing_info}
+              onChange={e => setField('closing_info', e.target.value)}
+              placeholder="Ej: Cerrado del 01/05 al 31/08 · Abierto todo el año"
+              style={{ ...inputSx, width: '100%' }}
+            />
+            <div style={{ fontSize: '10px', color: '#a8998c', marginTop: '4px' }}>
+              Texto libre: rangos, temporadas, "Abierto todo el año", etc.
+            </div>
           </div>
           <div style={{ marginTop: '14px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '12px', color: C.textMid, cursor: 'pointer' }}>
