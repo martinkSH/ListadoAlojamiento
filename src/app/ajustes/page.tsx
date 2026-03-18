@@ -41,6 +41,8 @@ export default function AjustesPage() {
   const [season, setSeason] = useState('26-27')
   const [pct, setPct] = useState('')
   const [note, setNote] = useState('')
+  const [availableCategories, setAvailableCategories] = useState<string[]>([])
+  const [loadingCats, setLoadingCats] = useState(false)
   const [preview, setPreview] = useState<PreviewRate[]>([])
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [applying, setApplying] = useState(false)
@@ -65,6 +67,21 @@ export default function AjustesPage() {
     }
     load()
   }, [])
+
+  async function loadCategories(id: string) {
+    if (!id) { setAvailableCategories([]); return }
+    setLoadingCats(true)
+    const { data } = await supabase
+      .from('hotels')
+      .select('category')
+      .eq('destination_id', id)
+      .eq('active', true) as any
+    const cats = [...new Set((data ?? []).map((h: any) => h.category))]
+      .sort((a: any, b: any) => CATEGORIES.indexOf(a) - CATEGORIES.indexOf(b))
+    setAvailableCategories(cats as string[])
+    if (cats.length > 0) setCategory(cats[0] as string)
+    setLoadingCats(false)
+  }
 
   async function loadHistory() {
     const { data } = await supabase
@@ -216,7 +233,7 @@ export default function AjustesPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '14px' }}>
                   <div>
                     <Label t="Destino" />
-                    <select value={destId} onChange={e => { setDestId(e.target.value); setPreview([]) }} style={{ ...inputSx, width: '100%' }}>
+                    <select value={destId} onChange={e => { setDestId(e.target.value); setPreview([]); loadCategories(e.target.value) }} style={{ ...inputSx, width: '100%' }}>
                       <option value="">Seleccionar...</option>
                       {['AR','CL','BR','PE','UY','PY','CO','EC','BO'].map(country => {
                         const dests = destinations.filter(d => d.country === country)
@@ -231,8 +248,15 @@ export default function AjustesPage() {
                   </div>
                   <div>
                     <Label t="Categoría" />
-                    <select value={category} onChange={e => { setCategory(e.target.value); setPreview([]) }} style={{ ...inputSx, width: '100%' }}>
-                      {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    <select
+                      value={category}
+                      onChange={e => { setCategory(e.target.value); setPreview([]) }}
+                      disabled={!destId || loadingCats}
+                      style={{ ...inputSx, width: '100%', opacity: (!destId || loadingCats) ? 0.5 : 1 }}
+                    >
+                      {!destId && <option value="">Elegí un destino primero</option>}
+                      {loadingCats && <option>Cargando...</option>}
+                      {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                   <div>
