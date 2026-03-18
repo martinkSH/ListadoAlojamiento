@@ -11,13 +11,9 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient()
 
-  // Buscar pedido por confirm_token
   const { data, error } = await supabase
     .from('availability_requests')
-    .select(`
-      *,
-      hotels ( name, contact_email )
-    `)
+    .select('*, hotels ( name, contact_email )')
     .eq('confirm_token', token)
     .single()
 
@@ -42,15 +38,13 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  // Actualizar estado
-  await supabase
+  await (supabase as any)
     .from('availability_requests')
     .update({ status: 'confirmed', responded_at: new Date().toISOString() })
     .eq('id', request.id)
 
-  // Notificar al operador
   const html = availabilityResultEmail({
-    hotelName: (request.hotels as any).name,
+    hotelName: request.hotels?.name ?? '',
     status: 'confirmed',
     checkIn: new Date(request.check_in),
     checkOut: new Date(request.check_out),
@@ -62,10 +56,10 @@ export async function GET(req: NextRequest) {
   try {
     await sendMail({
       to: request.operator_email,
-      subject: `✓ Disponibilidad confirmada — ${(request.hotels as any).name}`,
+      subject: `✓ Disponibilidad confirmada — ${request.hotels?.name}`,
       html,
     })
-    await supabase
+    await (supabase as any)
       .from('availability_requests')
       .update({ operator_notified_at: new Date().toISOString() })
       .eq('id', request.id)
@@ -79,7 +73,6 @@ export async function GET(req: NextRequest) {
   )
 }
 
-// Página simple que ve el hotel al hacer click
 function tokenPage(type: 'confirmed' | 'error' | 'expired' | 'already', message: string): string {
   const colors: Record<string, string> = {
     confirmed: '#15803d',
