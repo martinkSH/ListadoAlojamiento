@@ -19,22 +19,20 @@ export default function DeleteHotelButton({ hotelId, hotelName }: { hotelId: str
     router.push('/hoteles')
   }
 
-  if (confirming) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ fontSize: '10px', color: '#ef4444' }}>¿Eliminar "{hotelName.slice(0, 30)}..."?</span>
-        <button onClick={handleDelete} disabled={loading} style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', cursor: 'pointer' }}>
-          {loading ? 'Eliminando...' : 'Confirmar'}
-        </button>
-        <button onClick={() => setConfirming(false)} style={{ background: '#2a2a2a', color: '#aaa', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', cursor: 'pointer' }}>
-          Cancelar
-        </button>
-      </div>
-    )
-  }
+  if (confirming) return (
+    <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+      <span style={{ fontSize:'11px', color:'#b91c1c' }}>¿Eliminar?</span>
+      <button onClick={handleDelete} disabled={loading} style={{ background:'#fee2e2', color:'#b91c1c', border:'0.5px solid #fca5a5', borderRadius:'6px', padding:'5px 10px', fontSize:'11px', cursor:'pointer', fontFamily:'inherit' }}>
+        {loading ? 'Eliminando...' : 'Confirmar'}
+      </button>
+      <button onClick={() => setConfirming(false)} style={{ background:'#f5f0eb', color:'#8c7d72', border:'0.5px solid #e2ddd6', borderRadius:'6px', padding:'5px 10px', fontSize:'11px', cursor:'pointer', fontFamily:'inherit' }}>
+        Cancelar
+      </button>
+    </div>
+  )
 
   return (
-    <button onClick={() => setConfirming(true)} style={{ background: 'transparent', color: '#ef4444', border: '1px solid #ef444433', borderRadius: '6px', padding: '5px 12px', fontSize: '11px', cursor: 'pointer' }}>
+    <button onClick={() => setConfirming(true)} style={{ background:'transparent', color:'#b91c1c', border:'0.5px solid #fca5a5', borderRadius:'6px', padding:'5px 12px', fontSize:'11px', cursor:'pointer', fontFamily:'inherit' }}>
       Eliminar
     </button>
   )
