@@ -19,6 +19,7 @@ type Hotel = {
   net_rate_validity: string | null; destination_id: string
   rates: { room_base: string; pc_rate: number | null; net_rate: number | null; season: string }[]
   hotel_tags: HotelTag[]
+  tourplan_code: string | null
 }
 type Destination = { id: string; code: string; name: string; country: string }
 
@@ -93,6 +94,8 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate }: {
           return <>
             <div style={{ fontSize: '12px', color: isExpired ? '#c0392b' : '#2c2420', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {name}
+              {!hotel.tourplan_code && <span style={{ marginLeft: '3px', color: '#e57373', fontSize: '11px', fontWeight: 700 }} title="Sin código TourPlan">*</span>}
+              {hotel.tourplan_code && <span style={{ marginLeft: '5px', fontSize: '9px', color: '#b8a99a', fontFamily: 'monospace' }}>#{hotel.tourplan_code}</span>}
               <HotelTagBadges tags={hotel.hotel_tags ?? []} />
               {!hotel.is_direct && <span style={{ marginLeft: '5px', fontSize: '9px', color: '#3d1580', background: '#d5ccf5', padding: '0 5px', borderRadius: '3px', fontWeight: 600 }}>PLT</span>}
             </div>
@@ -158,7 +161,7 @@ export default function HotelesPage() {
 
     const { data: h } = await supabase
       .from('hotels')
-      .select('id,name,category,priority,distance_center,is_direct,is_family,net_rate_validity,destination_id,rates(room_base,pc_rate,net_rate,season),hotel_tags(id,tag_type,tag_value,tag_link)')
+      .select('id,name,category,priority,distance_center,is_direct,is_family,net_rate_validity,destination_id,tourplan_code,rates(room_base,pc_rate,net_rate,season),hotel_tags(id,tag_type,tag_value,tag_link)')
       .eq('active', true).in('destination_id', destIds).order('priority')
     setHotels((h ?? []) as Hotel[])
     setLoading(false)
