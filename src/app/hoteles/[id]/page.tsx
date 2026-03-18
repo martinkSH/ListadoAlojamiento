@@ -9,14 +9,14 @@ function splitHotelName(fullName: string): { name: string; desc: string } {
   return { name: fullName.slice(0, idx).trim(), desc: fullName.slice(idx).trim() }
 }
 
-export default async function HotelDetailPage({ params }: { params: { id: string } }) {
+export default async function HotelDetailPage({ params, searchParams }: { params: { id: string }, searchParams?: { date?: string } }) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
   const { data: hotel } = await supabase
     .from('hotels')
-    .select('*, destinations(id,code,name,country), rates(id,room_base,pc_rate,net_rate,season), promotions(id,title,description,promo_type,discount_pct,free_nights,valid_from,valid_until,book_by,conditions,active), tp_rates(id,option_desc,option_comment,room_base,tp_net_rate,synced_at)')
+    .select('*, destinations(id,code,name,country), rates(id,room_base,pc_rate,net_rate,season), promotions(id,title,description,promo_type,discount_pct,free_nights,valid_from,valid_until,book_by,conditions,active), tp_rates(id,option_desc,option_comment,room_base,tp_net_rate,date_from,date_to,synced_at), hotel_tp_room_map(option_desc)')
     .eq('id', params.id)
     .single() as any
 
@@ -26,6 +26,8 @@ export default async function HotelDetailPage({ params }: { params: { id: string
   const rates = (hotel.rates ?? []) as any[]
   const promos = (hotel.promotions ?? []) as any[]
   const tpRates = (hotel.tp_rates ?? []) as any[]
+  const mappedOption = (hotel.hotel_tp_room_map as any)?.[0]?.option_desc ?? null
+  const viewDate = searchParams?.date ?? new Date().toISOString().split('T')[0]
   const tpSyncedAt = tpRates[0]?.synced_at ? new Date(tpRates[0].synced_at).toLocaleDateString('es-AR') : null
   const r = (base: string, season: string) => rates.find((r: any) => r.room_base === base && r.season === season)
   const seasons = ['26-27']
@@ -154,11 +156,21 @@ export default async function HotelDetailPage({ params }: { params: { id: string
                 </thead>
                 <tbody>
                   {optionDescsArr.map((optDesc, si) => {
-                    const getRate = (base: string) => tpRates.find((r: any) => r.option_desc === optDesc && r.room_base === base)
+                    const isMapped = optDesc === mappedOption
+                    // For mapped option: show rate for viewDate. For others: show max rate.
+                    const getRate = (base: string) => {
+                      const matching = tpRates.filter((r: any) => r.option_desc === optDesc && r.room_base === base)
+                      if (!matching.length) return null
+                      if (isMapped) {
+                        const periodRate = matching.find((r: any) => r.date_from <= viewDate && r.date_to >= viewDate)
+                        if (periodRate) return periodRate
+                      }
+                      return matching.reduce((max: any, r: any) => r.tp_net_rate > max.tp_net_rate ? r : max)
+                    }
                     const sgl = getRate('SGL'), dbl = getRate('DBL'), tpl = getRate('TPL')
                     const comment = tpRates.find((r: any) => r.option_desc === optDesc)?.option_comment
                     return (
-                      <tr key={optDesc} style={{ borderTop: '0.5px solid #ede8e2', background: si % 2 === 0 ? '#fff' : '#fdf9f6' }}>
+                      <tr key={optDesc} style={{ borderTop: '0.5px solid #ede8e2', background: isMapped ? '#f0f7ff' : si % 2 === 0 ? '#fff' : '#fdf9f6' }}>
                         <td style={{ padding: '8px 16px' }}>
                           <div style={{ fontSize: '12px', color: '#3d3228', fontWeight: 500 }}>{optDesc}</div>
                           {comment && <div style={{ fontSize: '10px', color: '#b8a99a', marginTop: '1px' }}>{comment}</div>}
