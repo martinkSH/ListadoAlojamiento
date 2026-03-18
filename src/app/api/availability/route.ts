@@ -17,13 +17,11 @@ const schema = z.object({
 export async function POST(req: NextRequest) {
   const supabase = createAdminClient()
 
-  // Verificar sesión
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 
-  // Validar body
   const body = await req.json()
   const parsed = schema.safeParse(body)
   if (!parsed.success) {
@@ -31,20 +29,20 @@ export async function POST(req: NextRequest) {
   }
   const data = parsed.data
 
-  // Validar fechas
   const checkIn = new Date(data.checkIn)
   const checkOut = new Date(data.checkOut)
   if (checkOut <= checkIn) {
     return NextResponse.json({ error: 'Check-out debe ser posterior al check-in' }, { status: 400 })
   }
 
-  // Obtener hotel con email de contacto
-  const { data: hotel, error: hotelError } = await supabase
+  const { data: hotelData, error: hotelError } = await supabase
     .from('hotels')
     .select('id, name, contact_email')
     .eq('id', data.hotelId)
     .eq('active', true)
     .single()
+
+  const hotel = hotelData as any
 
   if (hotelError || !hotel) {
     return NextResponse.json({ error: 'Hotel no encontrado' }, { status: 404 })
@@ -53,8 +51,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'El hotel no tiene email de contacto configurado' }, { status: 422 })
   }
 
-  // Crear pedido en DB — los tokens se generan automáticamente
-  const { data: request, error: insertError } = await supabase
+  const { data: requestData, error: insertError } = await (supabase as any)
     .from('availability_requests')
     .insert({
       hotel_id: data.hotelId,
@@ -71,16 +68,16 @@ export async function POST(req: NextRequest) {
     .select()
     .single()
 
+  const request = requestData as any
+
   if (insertError || !request) {
     return NextResponse.json({ error: 'Error al crear el pedido' }, { status: 500 })
   }
 
-  // Armar URLs de respuesta del hotel
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL
   const confirmUrl = `${baseUrl}/api/availability/confirm?token=${request.confirm_token}`
   const declineUrl = `${baseUrl}/api/availability/decline?token=${request.decline_token}`
 
-  // Enviar mail al hotel
   const html = availabilityRequestEmail({
     hotelName: hotel.name,
     operatorName: request.operator_name ?? request.operator_email,
@@ -101,15 +98,13 @@ export async function POST(req: NextRequest) {
       html,
     })
 
-    // Registrar que el mail fue enviado
-    await supabase
+    await (supabase as any)
       .from('availability_requests')
       .update({ hotel_email_sent_at: new Date().toISOString() })
       .eq('id', request.id)
 
   } catch (mailError) {
     console.error('Error enviando mail:', mailError)
-    // No hacemos rollback — el pedido quedó guardado, se puede reintentar
     return NextResponse.json(
       { error: 'Pedido guardado pero hubo un error enviando el mail', requestId: request.id },
       { status: 207 }
