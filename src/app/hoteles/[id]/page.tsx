@@ -16,7 +16,7 @@ export default async function HotelDetailPage({ params }: { params: { id: string
 
   const { data: hotel } = await supabase
     .from('hotels')
-    .select('*, destinations(id,code,name,country), rates(id,room_base,pc_rate,net_rate,season), promotions(id,title,description,promo_type,discount_pct,free_nights,valid_from,valid_until,book_by,conditions,active)')
+    .select('*, destinations(id,code,name,country), rates(id,room_base,pc_rate,net_rate,season), promotions(id,title,description,promo_type,discount_pct,free_nights,valid_from,valid_until,book_by,conditions,active), tp_rates(id,option_desc,option_comment,room_base,tp_net_rate,synced_at)')
     .eq('id', params.id)
     .single() as any
 
@@ -25,6 +25,8 @@ export default async function HotelDetailPage({ params }: { params: { id: string
   const dest = hotel.destinations as any
   const rates = (hotel.rates ?? []) as any[]
   const promos = (hotel.promotions ?? []) as any[]
+  const tpRates = (hotel.tp_rates ?? []) as any[]
+  const tpSyncedAt = tpRates[0]?.synced_at ? new Date(tpRates[0].synced_at).toLocaleDateString('es-AR') : null
   const r = (base: string, season: string) => rates.find((r: any) => r.room_base === base && r.season === season)
   const seasons = ['26-27', '24-25']
   const bases = ['SGL', 'DBL', 'TPL']
