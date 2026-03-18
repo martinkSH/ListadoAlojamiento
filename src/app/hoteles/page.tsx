@@ -74,7 +74,11 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate }: {
         display: 'grid', gridTemplateColumns: GRID, padding: '5px 14px',
         borderBottom: '0.5px solid #ddd8d0', background: hovered ? '#eee8e0' : baseBg,
         alignItems: 'center', cursor: 'pointer' }}
-      onClick={e => { if ((e.target as HTMLElement).closest('a')) return; onNavigate(hotel.id) }}
+      onClick={e => {
+        const t = e.target as HTMLElement
+        if (t.closest('[data-tag-link]')) return
+        onNavigate(hotel.id)
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
