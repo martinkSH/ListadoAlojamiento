@@ -129,6 +129,56 @@ export default async function HotelDetailPage({ params }: { params: { id: string
           </table>
         </div>
 
+        {/* Tipos de habitación TourPlan */}
+        {tpRates.length > 0 && (() => {
+          const optionDescsArr: string[] = []
+          tpRates.forEach((r: any) => { if (!optionDescsArr.includes(r.option_desc)) optionDescsArr.push(r.option_desc) })
+          const hasTpl = tpRates.some((r: any) => r.room_base === 'TPL')
+          return (
+            <div style={S.card}>
+              <div style={{ ...S.cardHead, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <span style={S.cardTitle}>Tipos de habitación — TourPlan</span>
+                  <span style={{ fontSize: '9px', color: '#c4b8ad', marginLeft: '8px' }}>{optionDescsArr.length} tipo{optionDescsArr.length !== 1 ? 's' : ''}</span>
+                </div>
+                {tpSyncedAt && <span style={{ fontSize: '9px', color: '#c4b8ad' }}>sync: {tpSyncedAt}</span>}
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                <thead>
+                  <tr style={{ background: '#f5f0ea' }}>
+                    <th style={{ padding: '7px 16px', textAlign: 'left', color: '#9a8d82', fontWeight: 600, fontSize: '9px', letterSpacing: '0.07em', textTransform: 'uppercase' as const }}>Habitación</th>
+                    <th style={{ padding: '7px 12px', textAlign: 'right', color: '#9a8d82', fontWeight: 600, fontSize: '9px', letterSpacing: '0.07em', textTransform: 'uppercase' as const }}>SGL</th>
+                    <th style={{ padding: '7px 12px', textAlign: 'right', color: '#9a8d82', fontWeight: 600, fontSize: '9px', letterSpacing: '0.07em', textTransform: 'uppercase' as const }}>DBL</th>
+                    {hasTpl && <th style={{ padding: '7px 12px', textAlign: 'right', color: '#9a8d82', fontWeight: 600, fontSize: '9px', letterSpacing: '0.07em', textTransform: 'uppercase' as const }}>TPL</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {optionDescsArr.map((optDesc, si) => {
+                    const getRate = (base: string) => tpRates.find((r: any) => r.option_desc === optDesc && r.room_base === base)
+                    const sgl = getRate('SGL'), dbl = getRate('DBL'), tpl = getRate('TPL')
+                    const comment = tpRates.find((r: any) => r.option_desc === optDesc)?.option_comment
+                    return (
+                      <tr key={optDesc} style={{ borderTop: '0.5px solid #ede8e2', background: si % 2 === 0 ? '#fff' : '#fdf9f6' }}>
+                        <td style={{ padding: '8px 16px' }}>
+                          <div style={{ fontSize: '12px', color: '#3d3228', fontWeight: 500 }}>{optDesc}</div>
+                          {comment && <div style={{ fontSize: '10px', color: '#b8a99a', marginTop: '1px' }}>{comment}</div>}
+                        </td>
+                        {[sgl, dbl, ...(hasTpl ? [tpl] : [])].map((rate, i) => (
+                          <td key={i} style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
+                            {rate?.tp_net_rate != null
+                              ? <span style={{ fontSize: '13px', color: '#2c2420', fontWeight: 600 }}>${rate.tp_net_rate}</span>
+                              : <span style={{ color: '#ddd5cb', fontSize: '11px' }}>—</span>}
+                          </td>
+                        ))}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
+        })()}
+
         {/* Vigencias + Moneda */}
         <div style={{ ...S.card, padding:'14px 16px' }}>
           <div style={{ display:'flex', gap:'28px', flexWrap:'wrap' }}>
