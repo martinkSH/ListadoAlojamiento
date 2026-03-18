@@ -89,7 +89,9 @@ export async function POST(req: Request) {
   const isCron = cronSecret && authHeader === `Bearer ${cronSecret}`
 
   if (!isCron) {
-    const supabaseCheck = createAdminClient()
+    // Check session via cookie (browser calls)
+    const { createClient } = await import('@/lib/supabase/server')
+    const supabaseCheck = createClient()
     const { data: { user } } = await supabaseCheck.auth.getUser()
     if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
