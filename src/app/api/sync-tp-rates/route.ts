@@ -326,7 +326,7 @@ WHERE
     }
 
     // Parse option_desc: "COMFORT BUE" → { cat: 'Comfort', destCode: 'BUE' }
-    function parseOptionDesc(desc: string): { cat: string; destCode: string } | null {
+    const parseOptionDesc = (desc: string): { cat: string; destCode: string } | null => {
       const parts = desc.trim().split(' ')
       if (parts.length < 2) return null
       const destCode = parts[parts.length - 1]
