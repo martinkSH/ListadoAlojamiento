@@ -206,7 +206,7 @@ export async function POST(req: Request) {
     await supabase.from('tp_sync_log').insert({
       status: 'error',
       error_msg: err.message,
-    }).catch(() => {})
+    })
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
