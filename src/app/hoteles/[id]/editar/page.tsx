@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { HotelTagEditor, type HotelTag } from '@/components/hotels/HotelTags'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -43,6 +44,7 @@ export default function EditarHotelPage({ params }: { params: { id: string } }) 
   const [success, setSuccess] = useState(false)
   const [destinations, setDestinations] = useState<any[]>([])
   const [hotelName, setHotelName] = useState('')
+  const [initialTags, setInitialTags] = useState<HotelTag[]>([])
 
   const [form, setForm] = useState<any>({
     destination_id: '', name: '', category: 'Inn', currency: 'OFICIAL',
@@ -64,7 +66,7 @@ export default function EditarHotelPage({ params }: { params: { id: string } }) 
       if (!user) { router.push('/login'); return }
 
       const [{ data: hotel }, { data: dests }] = await Promise.all([
-        supabase.from('hotels').select('*, rates(id,room_base,pc_rate,net_rate,season)').eq('id', params.id).single() as any,
+        supabase.from('hotels').select('*, rates(id,room_base,pc_rate,net_rate,season), hotel_tags(id,tag_type,tag_value)').eq('id', params.id).single() as any,
         supabase.from('destinations').select('id,code,name,country').eq('active', true).order('name') as any,
       ])
 
@@ -72,6 +74,7 @@ export default function EditarHotelPage({ params }: { params: { id: string } }) 
 
       setDestinations(dests ?? [])
       setHotelName(hotel.name ?? '')
+      setInitialTags(hotel.hotel_tags ?? [])
       setForm({
         destination_id: hotel.destination_id ?? '',
         name: hotel.name ?? '',
@@ -349,6 +352,10 @@ export default function EditarHotelPage({ params }: { params: { id: string } }) 
               <input type="date" value={form.pc_rate_validity} onChange={e => setField('pc_rate_validity', e.target.value)} style={inputSx} />
             </div>
           </Grid2>
+        </Section>
+
+        <Section title="Etiquetas">
+          <HotelTagEditor hotelId={params.id} initialTags={initialTags} />
         </Section>
 
         <Section title="Notas internas">
