@@ -179,6 +179,28 @@ export async function POST(req: Request) {
     const matched = upsertRows.filter(r => r.hotel_id !== null).length
     console.log(`[tp-rates] Hotels matched: ${matched}/${rates.length}`)
 
+    // Get existing rates to compare
+    const { data: existingRates } = await supabase
+      .from('tp_rates')
+      .select('supplier_code, option_desc, room_base, season, tp_net_rate') as any
+
+    const existingMap = new Map<string, number>()
+    for (const r of (existingRates ?? [])) {
+      existingMap.set(`${r.supplier_code}__${r.option_desc}__${r.room_base}__${r.season}`, r.tp_net_rate)
+    }
+
+    let ratesNew = 0
+    let ratesUpdated = 0
+    let ratesUnchanged = 0
+
+    for (const r of upsertRows) {
+      const key = `${r.supplier_code}__${r.option_desc}__${r.room_base}__${r.season}`
+      const existing = existingMap.get(key)
+      if (existing === undefined) ratesNew++
+      else if (existing !== r.tp_net_rate) ratesUpdated++
+      else ratesUnchanged++
+    }
+
     // Upsert in batches of 500
     const BATCH = 500
     for (let i = 0; i < upsertRows.length; i += BATCH) {
@@ -199,8 +221,11 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       synced_at: startedAt,
-      rates_updated: upsertRows.length,
+      rates_total: upsertRows.length,
       hotels_matched: matched,
+      rates_new: ratesNew,
+      rates_updated: ratesUpdated,
+      rates_unchanged: ratesUnchanged,
     })
 
   } catch (err: any) {
