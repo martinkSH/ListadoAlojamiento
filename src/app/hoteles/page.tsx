@@ -2,138 +2,289 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 
-export default async function HotelesPage() {
+export default async function HotelesPage({
+  searchParams,
+}: {
+  searchParams: { region?: string }
+}) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
+
+  const region = searchParams.region ?? 'AR'
 
   const { data: destinations } = await supabase
     .from('destinations')
     .select('id, code, name, country')
     .eq('active', true)
-    .order('country')
+    .eq('country', region)
     .order('name')
 
   const { data: hotels } = await supabase
     .from('hotels')
     .select(`
       id, name, category, priority, distance_center,
-      contact_email, is_direct, net_rate_validity, active,
-      destination_id,
+      contact_email, is_direct, net_rate_validity,
+      closing_date, is_family, family_type, destination_id,
       rates ( room_base, pc_rate, net_rate, season )
     `)
     .eq('active', true)
     .order('priority')
 
   const categoryOrder = ['Inn/Apart', 'Inn', 'Comfort', 'Superior', 'Luxury']
+
   const categoryColors: Record<string, string> = {
-    'Inn/Apart': 'bg-blue-50 text-blue-700',
-    'Inn': 'bg-gray-100 text-gray-700',
-    'Comfort': 'bg-amber-50 text-amber-700',
-    'Superior': 'bg-purple-50 text-purple-700',
-    'Luxury': 'bg-yellow-50 text-yellow-800',
+    'Inn/Apart': '#dbeafe|#1e40af',
+    'Inn':       '#f3f4f6|#374151',
+    'Comfort':   '#fef3c7|#92400e',
+    'Superior':  '#ede9fe|#5b21b6',
+    'Luxury':    '#fefce8|#713f12',
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
-          <h1 className="font-bold text-gray-900">Say Hueque — Alojamiento</h1>
-          <Link
-            href="/hoteles/nuevo"
-            className="bg-gray-900 text-white text-sm px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors"
-          >
-            + Agregar hotel
-          </Link>
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#f8f8f6', fontFamily: "'DM Mono', 'Courier New', monospace" }}>
+
+      {/* SIDEBAR */}
+      <aside style={{
+        width: '200px',
+        minWidth: '200px',
+        background: '#1a1a1a',
+        borderRight: '1px solid #2a2a2a',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'sticky',
+        top: 0,
+        height: '100vh',
+        overflowY: 'auto',
+      }}>
+        {/* Logo */}
+        <div style={{ padding: '16px 14px 12px', borderBottom: '1px solid #2a2a2a' }}>
+          <div style={{ color: '#fff', fontSize: '12px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Say Hueque</div>
+          <div style={{ color: '#666', fontSize: '10px', marginTop: '2px', letterSpacing: '0.05em' }}>Alojamiento</div>
         </div>
-      </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {(destinations ?? []).map((dest) => {
-          const destHotels = (hotels ?? []).filter((h) => h.destination_id === dest.id)
-          if (destHotels.length === 0) return null
+        {/* Nav */}
+        <nav style={{ padding: '8px 0', flex: 1 }}>
+          <div style={{ padding: '6px 14px 4px', color: '#444', fontSize: '9px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Temporada 26-27</div>
 
-          const byCategory = categoryOrder.reduce((acc: Record<string, typeof destHotels>, cat) => {
-            const group = destHotels.filter((h) => h.category === cat)
-            if (group.length > 0) acc[cat] = group
-            return acc
-          }, {})
+          {[
+            { label: 'Argentina', country: 'AR', emoji: '🇦🇷' },
+            { label: 'Exterior', country: 'CL', emoji: '🌎' },
+            { label: 'Brasil', country: 'BR', emoji: '🇧🇷' },
+          ].map(({ label, country, emoji }) => (
+            <Link
+              key={country}
+              href={`/hoteles?region=${country}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '7px 14px',
+                fontSize: '12px',
+                color: region === country ? '#fff' : '#888',
+                background: region === country ? '#2a2a2a' : 'transparent',
+                textDecoration: 'none',
+                borderLeft: region === country ? '2px solid #fff' : '2px solid transparent',
+                transition: 'all 0.1s',
+              }}
+            >
+              <span style={{ fontSize: '11px' }}>{emoji}</span>
+              {label}
+            </Link>
+          ))}
 
-          return (
-            <section key={dest.id} className="mb-10">
-              <div className="flex items-center gap-3 mb-4">
-                <h2 className="text-lg font-bold text-gray-900">{dest.name}</h2>
-                <span className="text-xs text-gray-400 font-mono">{dest.code}</span>
-                <span className="text-xs text-gray-400">{dest.country}</span>
-              </div>
+          <div style={{ margin: '12px 0 4px', borderTop: '1px solid #2a2a2a' }} />
+          <div style={{ padding: '6px 14px 4px', color: '#444', fontSize: '9px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Gestión</div>
 
-              {Object.entries(byCategory).map(([category, catHotels]) => (
-                <div key={category} className="mb-6">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${categoryColors[category] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {category}
-                    </span>
-                    <span className="text-xs text-gray-400">{catHotels.length} hoteles</span>
-                  </div>
+          <Link href="/hoteles/nuevo" style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            padding: '7px 14px', fontSize: '12px', color: '#888',
+            textDecoration: 'none',
+          }}>
+            <span style={{ fontSize: '11px' }}>＋</span> Nuevo hotel
+          </Link>
+        </nav>
 
-                  <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-                    {catHotels.map((hotel, idx) => {
-                      const rates = (hotel.rates ?? []) as any[]
-                      const sglRate = rates.find((r) => r.room_base === 'SGL' && r.season === '26-27')
-                      const dblRate = rates.find((r) => r.room_base === 'DBL' && r.season === '26-27')
-                      const isExpired = hotel.net_rate_validity
-                        ? new Date(hotel.net_rate_validity) < new Date()
-                        : false
+        {/* User */}
+        <div style={{ padding: '12px 14px', borderTop: '1px solid #2a2a2a' }}>
+          <div style={{ color: '#555', fontSize: '10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {user.email}
+          </div>
+        </div>
+      </aside>
 
-                      return (
-                        <Link
-                          key={hotel.id}
-                          href={`/hoteles/${hotel.id}`}
-                          className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 transition-colors group"
-                        >
-                          <span className="text-xs font-mono text-gray-400 w-5 text-center flex-shrink-0">
-                            {String.fromCharCode(64 + (idx + 1))}
-                          </span>
+      {/* MAIN CONTENT */}
+      <main style={{ flex: 1, overflow: 'auto' }}>
 
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-gray-900 truncate group-hover:text-gray-700">
-                              {hotel.name}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              {hotel.distance_center ?? '—'}
-                              {hotel.is_direct ? '' : ' · Plataforma'}
-                            </p>
-                          </div>
+        {/* Top bar */}
+        <div style={{
+          padding: '10px 20px',
+          borderBottom: '1px solid #e0e0d8',
+          background: '#fff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
+        }}>
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            {region === 'AR' ? '🇦🇷 Argentina 26-27' : region === 'CL' ? '🌎 Exterior 26-27' : '🇧🇷 Brasil 26-27'}
+            <span style={{ marginLeft: '8px', color: '#aaa' }}>
+              {hotels?.filter(h => (destinations ?? []).some(d => d.id === h.destination_id)).length ?? 0} hoteles
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <span style={{ fontSize: '10px', color: '#aaa' }}>Temporada 2026-2027</span>
+          </div>
+        </div>
 
-                          <div className="flex gap-6 text-right flex-shrink-0">
-                            {sglRate && (
-                              <div>
-                                <p className="text-xs text-gray-400">SGL</p>
-                                <p className="text-sm font-medium text-gray-900">${sglRate.pc_rate}</p>
-                                <p className="text-xs text-gray-500">NT ${sglRate.net_rate}</p>
-                              </div>
-                            )}
-                            {dblRate && (
-                              <div>
-                                <p className="text-xs text-gray-400">DBL</p>
-                                <p className="text-sm font-medium text-gray-900">${dblRate.pc_rate}</p>
-                                <p className="text-xs text-gray-500">NT ${dblRate.net_rate}</p>
-                              </div>
-                            )}
-                          </div>
+        {/* Table */}
+        <div style={{ padding: '0' }}>
+          {/* Table header */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '28px 1fr 70px 80px 70px 80px 70px 80px 90px',
+            padding: '6px 16px',
+            background: '#f0f0ec',
+            borderBottom: '2px solid #d8d8d0',
+            position: 'sticky',
+            top: '41px',
+            zIndex: 9,
+          }}>
+            {['#', 'Hotel', 'Categ.', 'SGL PC', 'SGL NT', 'DBL PC', 'DBL NT', 'TPL PC', 'TPL NT'].map((h, i) => (
+              <div key={i} style={{
+                fontSize: '9px',
+                fontWeight: 700,
+                color: '#666',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                textAlign: i > 1 ? 'right' : 'left',
+              }}>{h}</div>
+            ))}
+          </div>
 
-                          {isExpired && (
-                            <span className="text-xs text-red-500 flex-shrink-0">Vencida</span>
-                          )}
-                        </Link>
-                      )
-                    })}
-                  </div>
+          {/* Destinations + rows */}
+          {(destinations ?? []).map((dest) => {
+            const destHotels = (hotels ?? []).filter(h => h.destination_id === dest.id)
+            if (destHotels.length === 0) return null
+
+            const byCategory = categoryOrder.reduce((acc: Record<string, any[]>, cat) => {
+              const group = destHotels.filter(h => h.category === cat)
+              if (group.length > 0) acc[cat] = group
+              return acc
+            }, {})
+
+            return (
+              <div key={dest.id}>
+                {/* Destination header */}
+                <div style={{
+                  padding: '8px 16px 4px',
+                  background: '#1a1a1a',
+                  color: '#fff',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}>
+                  {dest.name}
+                  <span style={{ color: '#555', fontSize: '10px', fontWeight: 400 }}>{dest.code}</span>
                 </div>
-              ))}
-            </section>
-          )
-        })}
+
+                {Object.entries(byCategory).map(([category, catHotels]: [string, any]) => {
+                  const [bg, text] = (categoryColors[category] ?? '#f3f4f6|#374151').split('|')
+                  return (
+                    <div key={category}>
+                      {/* Category subheader */}
+                      <div style={{
+                        padding: '3px 16px 3px 44px',
+                        background: bg,
+                        borderBottom: `1px solid ${text}22`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}>
+                        <span style={{ fontSize: '9px', fontWeight: 700, color: text, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{category}</span>
+                        <span style={{ fontSize: '9px', color: `${text}88` }}>{catHotels.length}</span>
+                      </div>
+
+                      {/* Hotel rows */}
+                      {catHotels.map((hotel: any, idx: number) => {
+                        const rates = (hotel.rates ?? []) as any[]
+                        const r = (base: string) => rates.find(r => r.room_base === base && r.season === '26-27')
+                        const sgl = r('SGL'), dbl = r('DBL'), tpl = r('TPL')
+                        const isExpired = hotel.net_rate_validity
+                          ? new Date(hotel.net_rate_validity) < new Date()
+                          : false
+
+                        return (
+                          <Link
+                            key={hotel.id}
+                            href={`/hoteles/${hotel.id}`}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '28px 1fr 70px 80px 70px 80px 70px 80px 90px',
+                              padding: '5px 16px',
+                              borderBottom: '1px solid #ebebeb',
+                              background: idx % 2 === 0 ? '#fff' : '#fafaf8',
+                              textDecoration: 'none',
+                              alignItems: 'center',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {/* Priority */}
+                            <div style={{ fontSize: '9px', color: '#aaa', fontWeight: 600 }}>
+                              {String.fromCharCode(64 + (idx + 1))}
+                            </div>
+
+                            {/* Name */}
+                            <div style={{ minWidth: 0, paddingRight: '8px' }}>
+                              <div style={{
+                                fontSize: '11px',
+                                color: isExpired ? '#ef4444' : '#1a1a1a',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}>
+                                {hotel.name}
+                                {hotel.is_family && <span style={{ marginLeft: '4px', color: '#f59e0b', fontSize: '9px' }}>FAM</span>}
+                                {!hotel.is_direct && <span style={{ marginLeft: '4px', color: '#8b5cf6', fontSize: '9px' }}>PLT</span>}
+                              </div>
+                              {hotel.distance_center && (
+                                <div style={{ fontSize: '9px', color: '#aaa', marginTop: '1px' }}>{hotel.distance_center}</div>
+                              )}
+                            </div>
+
+                            {/* Category badge */}
+                            <div style={{ fontSize: '9px', color: text, textAlign: 'right' }}>{category.replace('Inn/Apart', 'Inn/Apt')}</div>
+
+                            {/* Rates */}
+                            {[
+                              sgl?.pc_rate, sgl?.net_rate,
+                              dbl?.pc_rate, dbl?.net_rate,
+                              tpl?.pc_rate, tpl?.net_rate,
+                            ].map((val, i) => (
+                              <div key={i} style={{
+                                fontSize: '11px',
+                                color: i % 2 === 0 ? '#1a1a1a' : '#6b7280',
+                                textAlign: 'right',
+                                fontVariantNumeric: 'tabular-nums',
+                              }}>
+                                {val != null ? `$${val}` : <span style={{ color: '#ddd' }}>—</span>}
+                              </div>
+                            ))}
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
       </main>
     </div>
   )
