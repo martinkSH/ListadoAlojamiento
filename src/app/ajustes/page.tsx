@@ -50,6 +50,8 @@ export default function AjustesPage() {
   const [history, setHistory] = useState<Adjustment[]>([])
   const [userEmail, setUserEmail] = useState('')
   const [userId, setUserId] = useState('')
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -68,6 +70,23 @@ export default function AjustesPage() {
     load()
   }, [])
 
+  async function handleSyncTP() {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const res = await fetch('/api/sync-tp-rates', { method: 'POST' })
+      const data = await res.json()
+      if (data.ok) {
+        setSyncResult({ ok: true, msg: `✓ Sync completado — ${data.rates_updated} tarifas · ${data.hotels_matched} hoteles · ${data.synced_at}` })
+      } else {
+        setSyncResult({ ok: false, msg: `Error: ${data.error}` })
+      }
+    } catch (e: any) {
+      setSyncResult({ ok: false, msg: `Error de red: ${e.message}` })
+    }
+    setSyncing(false)
+  }
+
   async function loadCategories(id: string) {
     if (!id) { setAvailableCategories([]); return }
     setLoadingCats(true)
@@ -76,7 +95,7 @@ export default function AjustesPage() {
       .select('category')
       .eq('destination_id', id)
       .eq('active', true) as any
-    const cats = Array.from(new Set((data ?? []).map((h: any) => h.category)))
+    const cats = [...new Set((data ?? []).map((h: any) => h.category))]
       .sort((a: any, b: any) => CATEGORIES.indexOf(a) - CATEGORIES.indexOf(b))
     setAvailableCategories(cats as string[])
     if (cats.length > 0) setCategory(cats[0] as string)
@@ -228,6 +247,37 @@ export default function AjustesPage() {
           <div style={{ maxWidth: '800px', margin: '0 auto' }}>
 
             {/* Formulario */}
+            {/* Sync TourPlan */}
+            <div style={{ background: C.card, border: `0.5px solid ${C.cardBorder}`, borderRadius: '10px', marginBottom: '16px', overflow: 'hidden' }}>
+              <div style={{ padding: '9px 16px', borderBottom: `0.5px solid ${C.cardBorder}`, background: C.cardHead, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>Sync TourPlan — Tarifas</span>
+                <span style={{ fontSize: '9px', color: C.label }}>Automático: todos los días 6am UTC</span>
+              </div>
+              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' as const }}>
+                <button
+                  onClick={handleSyncTP}
+                  disabled={syncing}
+                  style={{
+                    padding: '8px 20px', fontSize: '12px', fontWeight: 600, fontFamily: font,
+                    background: syncing ? '#a09080' : C.btnPrimary, color: '#fff',
+                    border: 'none', borderRadius: '7px', cursor: syncing ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {syncing ? 'Sincronizando...' : '⟳ Sync ahora'}
+                </button>
+                {syncResult && (
+                  <div style={{
+                    fontSize: '12px', padding: '6px 12px', borderRadius: '6px',
+                    background: syncResult.ok ? C.successBg : C.errorBg,
+                    color: syncResult.ok ? C.success : C.error,
+                    border: `1px solid ${syncResult.ok ? C.successBorder : C.errorBorder}`,
+                  }}>
+                    {syncResult.msg}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {Section({ title: 'Configurar ajuste', children: (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '14px' }}>
