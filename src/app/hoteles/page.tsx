@@ -48,6 +48,12 @@ const COUNTRY_FLAGS: Record<string, string> = { AR:'🇦🇷',CL:'🇨🇱',BR:'
 
 const GRID = '18px 20px 1fr 68px 58px 50px 58px 50px 58px 50px'
 
+function splitHotelName(fullName: string): { name: string; desc: string } {
+  const idx = fullName.search(/\s*\(/)
+  if (idx === -1) return { name: fullName, desc: '' }
+  return { name: fullName.slice(0, idx).trim(), desc: fullName.slice(idx).trim() }
+}
+
 function HotelRow({ hotel, idx, isAdmin, onNavigate }: {
   hotel: Hotel; idx: number; isAdmin: boolean; onNavigate: (id: string) => void
 }) {
@@ -78,12 +84,21 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate }: {
         {String.fromCharCode(64 + (idx + 1))}
       </div>
       <div style={{ minWidth: 0, paddingRight: '8px' }}>
-        <div style={{ fontSize: '12px', color: isExpired ? '#c0392b' : '#2c2420', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {hotel.name}
-          <HotelTagBadges tags={hotel.hotel_tags ?? []} />
-          {!hotel.is_direct && <span style={{ marginLeft: '5px', fontSize: '9px', color: '#3d1580', background: '#d5ccf5', padding: '0 5px', borderRadius: '3px', fontWeight: 600 }}>PLT</span>}
-        </div>
-        {hotel.distance_center && <div style={{ fontSize: '10px', color: '#a09080', marginTop: '1px' }}>{hotel.distance_center}</div>}
+        {(() => {
+          const { name, desc } = splitHotelName(hotel.name)
+          return <>
+            <div style={{ fontSize: '12px', color: isExpired ? '#c0392b' : '#2c2420', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {name}
+              <HotelTagBadges tags={hotel.hotel_tags ?? []} />
+              {!hotel.is_direct && <span style={{ marginLeft: '5px', fontSize: '9px', color: '#3d1580', background: '#d5ccf5', padding: '0 5px', borderRadius: '3px', fontWeight: 600 }}>PLT</span>}
+            </div>
+            {(desc || hotel.distance_center) && (
+              <div style={{ fontSize: '10px', color: '#a09080', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {desc}{desc && hotel.distance_center ? ' · ' : ''}{hotel.distance_center}
+              </div>
+            )}
+          </>
+        })()}
       </div>
       <div style={{ fontSize: '10px', color: CAT_STYLES[hotel.category]?.text ?? '#333', textAlign: 'right', paddingRight: '4px', fontWeight: 500 }}>
         {hotel.category.replace('Inn/Apart','Inn/Apt').replace('Estancia sup','Est.sup').replace('Estancia lux','Est.lux')}
