@@ -35,14 +35,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Check-out debe ser posterior al check-in' }, { status: 400 })
   }
 
-  const { data: hotelData, error: hotelError } = await supabase
+  const { data: hotel, error: hotelError } = await supabase
     .from('hotels')
     .select('id, name, contact_email')
     .eq('id', data.hotelId)
     .eq('active', true)
-    .single()
-
-  const hotel = hotelData as any
+    .single() as any
 
   if (hotelError || !hotel) {
     return NextResponse.json({ error: 'Hotel no encontrado' }, { status: 404 })
@@ -51,7 +49,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'El hotel no tiene email de contacto configurado' }, { status: 422 })
   }
 
-  const { data: requestData, error: insertError } = await (supabase as any)
+  const { data: request, error: insertError } = await supabase
     .from('availability_requests')
     .insert({
       hotel_id: data.hotelId,
@@ -66,9 +64,7 @@ export async function POST(req: NextRequest) {
       notes: data.notes,
     })
     .select()
-    .single()
-
-  const request = requestData as any
+    .single() as any
 
   if (insertError || !request) {
     return NextResponse.json({ error: 'Error al crear el pedido' }, { status: 500 })
@@ -97,12 +93,10 @@ export async function POST(req: NextRequest) {
       subject: `Consulta de disponibilidad — ${hotel.name}`,
       html,
     })
-
-    await (supabase as any)
+    await supabase
       .from('availability_requests')
       .update({ hotel_email_sent_at: new Date().toISOString() })
-      .eq('id', request.id)
-
+      .eq('id', request.id) as any
   } catch (mailError) {
     console.error('Error enviando mail:', mailError)
     return NextResponse.json(
