@@ -95,7 +95,7 @@ export default function AjustesPage() {
       .select('category')
       .eq('destination_id', id)
       .eq('active', true) as any
-    const cats = [...new Set((data ?? []).map((h: any) => h.category))]
+    const cats = Array.from(new Set((data ?? []).map((h: any) => h.category)))
       .sort((a: any, b: any) => CATEGORIES.indexOf(a) - CATEGORIES.indexOf(b))
     setAvailableCategories(cats as string[])
     if (cats.length > 0) setCategory(cats[0] as string)
