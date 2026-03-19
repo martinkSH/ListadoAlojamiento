@@ -13,7 +13,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-type DateRate = { sgl_nt: number|null; dbl_nt: number|null; tpl_nt: number|null }
+type DateRate = { sgl_pc: number|null; dbl_pc: number|null; tpl_pc: number|null; sgl_nt: number|null; dbl_nt: number|null; tpl_nt: number|null }
 
 type Hotel = {
   id: string; name: string; category: string; priority: number
@@ -70,6 +70,10 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate, dateRate }: {
   const r = (base: string) => rates.find(r => r.room_base === base && r.season === '26-27')
   const sgl = r('SGL'), dbl = r('DBL'), tpl = r('TPL')
 
+  // PC: use date-specific rate if available, else fallback to rates table
+  const sgl_pc = dateRate?.sgl_pc ?? sgl?.pc_rate ?? null
+  const dbl_pc = dateRate?.dbl_pc ?? dbl?.pc_rate ?? null
+  const tpl_pc = dateRate?.tpl_pc ?? tpl?.pc_rate ?? null
   // NT: use date-specific rate if available, else fallback to rates table
   const sgl_nt = dateRate?.sgl_nt ?? sgl?.net_rate ?? null
   const dbl_nt = dateRate?.dbl_nt ?? dbl?.net_rate ?? null
@@ -120,7 +124,7 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate, dateRate }: {
       <div style={{ fontSize: '10px', color: CAT_STYLES[hotel.category]?.text ?? '#333', textAlign: 'right', paddingRight: '4px', fontWeight: 500 }}>
         {hotel.category.replace('Inn/Apart','Inn/Apt').replace('Estancia sup','Est.sup').replace('Estancia lux','Est.lux')}
       </div>
-      {[sgl?.pc_rate, sgl_nt, dbl?.pc_rate, dbl_nt, tpl?.pc_rate, tpl_nt].map((val, i) => (
+      {[sgl_pc, sgl_nt, dbl_pc, dbl_nt, tpl_pc, tpl_nt].map((val, i) => (
         <div key={i} style={{ fontSize: '12px', color: i % 2 === 0 ? '#2c2420' : '#a09080', textAlign: 'right', fontFamily: 'monospace' }}>
           {val != null ? `$${val}` : <span style={{ color: '#ccc8c0' }}>—</span>}
         </div>
