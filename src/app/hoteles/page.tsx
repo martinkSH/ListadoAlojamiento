@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { HotelTagBadges, type HotelTag } from '@/components/hotels/HotelTags'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -12,6 +12,8 @@ import {
   useSortable, verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+
+type DateRate = { sgl_nt: number|null; dbl_nt: number|null; tpl_nt: number|null }
 
 type Hotel = {
   id: string; name: string; category: string; priority: number
@@ -55,8 +57,10 @@ function splitHotelName(fullName: string): { name: string; desc: string } {
   return { name: fullName.slice(0, idx).trim(), desc: fullName.slice(idx).trim() }
 }
 
-function HotelRow({ hotel, idx, isAdmin, onNavigate }: {
-  hotel: Hotel; idx: number; isAdmin: boolean; onNavigate: (id: string) => void
+function HotelRow({ hotel, idx, isAdmin, onNavigate, dateRate }: {
+  hotel: Hotel; idx: number; isAdmin: boolean
+  onNavigate: (id: string) => void
+  dateRate: DateRate | null
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: hotel.id, disabled: !isAdmin })
@@ -65,6 +69,12 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate }: {
   const rates = hotel.rates ?? []
   const r = (base: string) => rates.find(r => r.room_base === base && r.season === '26-27')
   const sgl = r('SGL'), dbl = r('DBL'), tpl = r('TPL')
+
+  // NT: use date-specific rate if available, else fallback to rates table
+  const sgl_nt = dateRate?.sgl_nt ?? sgl?.net_rate ?? null
+  const dbl_nt = dateRate?.dbl_nt ?? dbl?.net_rate ?? null
+  const tpl_nt = dateRate?.tpl_nt ?? tpl?.net_rate ?? null
+
   const isExpired = hotel.net_rate_validity ? new Date(hotel.net_rate_validity) < new Date() : false
   const baseBg = idx % 2 === 0 ? '#ffffff' : '#f9f6f2'
 
@@ -110,7 +120,7 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate }: {
       <div style={{ fontSize: '10px', color: CAT_STYLES[hotel.category]?.text ?? '#333', textAlign: 'right', paddingRight: '4px', fontWeight: 500 }}>
         {hotel.category.replace('Inn/Apart','Inn/Apt').replace('Estancia sup','Est.sup').replace('Estancia lux','Est.lux')}
       </div>
-      {[sgl?.pc_rate, sgl?.net_rate, dbl?.pc_rate, dbl?.net_rate, tpl?.pc_rate, tpl?.net_rate].map((val, i) => (
+      {[sgl?.pc_rate, sgl_nt, dbl?.pc_rate, dbl_nt, tpl?.pc_rate, tpl_nt].map((val, i) => (
         <div key={i} style={{ fontSize: '12px', color: i % 2 === 0 ? '#2c2420' : '#a09080', textAlign: 'right', fontFamily: 'monospace' }}>
           {val != null ? `$${val}` : <span style={{ color: '#ccc8c0' }}>—</span>}
         </div>
@@ -125,27 +135,9 @@ export default function HotelesPage() {
   const [hotels, setHotels] = useState<Hotel[]>([])
   const [region, setRegion] = useState('AR')
   const [search, setSearch] = useState('')
-  const [viewDate, setViewDate] = useState(() => new Date().toISOString().split('T')[0])
-  const [dateRates, setDateRates] = useState<Record<string, { sgl_nt: number|null, dbl_nt: number|null, tpl_nt: number|null }>>({})
+  const [viewDate, setViewDate] = useState('')
+  const [dateRates, setDateRates] = useState<Record<string, DateRate>>({})
   const [loadingRates, setLoadingRates] = useState(false)
-
-  async function fetchRatesForDate(date: string) {
-    setLoadingRates(true)
-    try {
-      const res = await fetch(`/api/rates-for-date?date=${date}`)
-      const json = await res.json()
-      const map: Record<string, any> = {}
-      for (const r of (json.rates ?? [])) map[r.hotel_id] = r
-      setDateRates(map)
-    } catch (e) {
-      console.error('fetchRatesForDate error', e)
-    }
-    setLoadingRates(false)
-  }
-
-  useEffect(() => {
-    fetchRatesForDate(viewDate)
-  }, [viewDate])
   const [isAdmin, setIsAdmin] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -155,6 +147,43 @@ export default function HotelesPage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
+
+  async function fetchRatesForDate(date: string) {
+    if (!date) return
+    setLoadingRates(true)
+    try {
+      const res = await fetch(`/api/rates-for-date?date=${date}`)
+      const json = await res.json()
+      const map: Record<string, DateRate> = {}
+      for (const r of (json.rates ?? [])) map[r.hotel_id] = r
+      setDateRates(map)
+    } catch (e) {
+      console.error('fetchRatesForDate error', e)
+    }
+    setLoadingRates(false)
+  }
+
+  // Load default date from app_settings on mount
+  useEffect(() => {
+    async function loadDefaultDate() {
+      try {
+        const { data } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'default_view_date')
+          .single() as any
+        const date = data?.value ?? new Date().toISOString().split('T')[0]
+        setViewDate(date)
+      } catch {
+        setViewDate(new Date().toISOString().split('T')[0])
+      }
+    }
+    loadDefaultDate()
+  }, [])
+
+  useEffect(() => {
+    if (viewDate) fetchRatesForDate(viewDate)
+  }, [viewDate])
 
   useEffect(() => { loadData() }, [region])
 
@@ -198,10 +227,8 @@ export default function HotelesPage() {
     }
     if (!search) return list
     const q = search.toLowerCase()
-    // Match destinations by code/name OR destinations that have hotels matching the query
     return list.filter(d => {
       if (d.code.toLowerCase().includes(q) || d.name.toLowerCase().includes(q)) return true
-      // Check if any hotel in this destination matches
       const destHotels = hotels.filter(h => h.destination_id === d.id)
       return destHotels.some(h => {
         const { name: hotelName } = splitHotelName(h.name)
@@ -210,7 +237,6 @@ export default function HotelesPage() {
     })
   })()
 
-  // If searching, also filter hotels within destinations to only show matching ones
   function getFilteredHotels(destId: string) {
     const destHotels = hotels.filter(h => h.destination_id === destId)
     if (!search) return destHotels
@@ -255,11 +281,7 @@ export default function HotelesPage() {
   }
 
   return (
-    // CLAVE: height 100vh en el wrapper + overflow hidden
-    // El scroll ocurre en #scroll-area, no en window
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#f5f0ea', fontFamily: "'Inter','Helvetica Neue',system-ui,sans-serif" }}>
-
-      {/* SIDEBAR — no scrollea */}
       <aside style={{ width: '188px', minWidth: '188px', background: C.sidebar, borderRight: `0.5px solid ${C.sidebarBorder}`, display: 'flex', flexDirection: 'column', height: '100vh', overflowY: 'auto', flexShrink: 0 }}>
         <div style={{ padding: '16px 14px 12px', borderBottom: `0.5px solid ${C.sidebarBorder}` }}>
           <div style={{ fontSize: '13px', fontWeight: 600, color: C.navText }}>Say Hueque</div>
@@ -309,10 +331,7 @@ export default function HotelesPage() {
         </div>
       </aside>
 
-      {/* RIGHT PANEL — flex column, scroll solo en el contenido */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-        {/* Top bar — FIJO, no scrollea */}
         <div style={{ flexShrink: 0, padding: '8px 14px', borderBottom: `1px solid ${C.topbarBorder}`, background: C.topbar, display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ position: 'relative', flex: 1, maxWidth: '340px' }}>
             <span style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: '#a09080', fontSize: '13px', pointerEvents: 'none' }}>⌕</span>
@@ -323,24 +342,18 @@ export default function HotelesPage() {
             />
             {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#a09080', fontSize: '13px', padding: 0 }}>✕</button>}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '10px', color: '#9a8d82', whiteSpace: 'nowrap' }}>Ver tarifas al:</span>
             <input
               type="date"
               value={viewDate}
               onChange={e => setViewDate(e.target.value)}
-              style={{
-                fontSize: '11px', padding: '4px 8px', border: '1px solid #ddd5cb',
-                borderRadius: '6px', background: '#faf7f3', color: '#2c2420',
-                fontFamily: "'Inter','Helvetica Neue',system-ui,sans-serif", outline: 'none',
-              }}
+              style={{ fontSize: '11px', padding: '4px 8px', border: '1px solid #ddd5cb', borderRadius: '6px', background: '#faf7f3', color: '#2c2420', fontFamily: "'Inter','Helvetica Neue',system-ui,sans-serif", outline: 'none' }}
             />
             <button
               onClick={() => setViewDate(new Date().toISOString().split('T')[0])}
               style={{ fontSize: '10px', color: '#9a8d82', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
-            >
-              Hoy
-            </button>
+            >Hoy</button>
             {loadingRates && <span style={{ fontSize: '10px', color: '#b8a99a' }}>actualizando...</span>}
           </div>
           <div style={{ marginLeft: 'auto', fontSize: '11px', color: C.navMuted, fontWeight: 500 }}>
@@ -348,14 +361,12 @@ export default function HotelesPage() {
           </div>
         </div>
 
-        {/* Column header — FIJO, no scrollea */}
         <div style={{ flexShrink: 0, display: 'grid', gridTemplateColumns: GRID, padding: '6px 14px', background: C.colHeader, borderBottom: `1px solid ${C.colHeaderBorder}` }}>
           {['', '#', 'Hotel', 'Categ.', 'SGL PC', 'NT', 'DBL PC', 'NT', 'TPL PC', 'NT'].map((h, i) => (
             <div key={i} style={{ fontSize: '10px', fontWeight: 700, color: C.colHeaderText, letterSpacing: '0.07em', textTransform: 'uppercase', textAlign: i > 2 ? 'right' as const : 'left' as const }}>{h}</div>
           ))}
         </div>
 
-        {/* Scrollable content — SOLO ESTO SCROLLEA */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {loading ? (
             <div style={{ padding: '48px', textAlign: 'center', color: C.navMuted, fontSize: '13px' }}>Cargando...</div>
@@ -364,7 +375,7 @@ export default function HotelesPage() {
               No se encontraron destinos{search ? ` para "${search}"` : ''}
             </div>
           ) : filteredDests.map(dest => {
-            const destHotels = getHotels(dest.id)
+            const destHotels = getFilteredHotels(dest.id)
             if (!destHotels.length) return null
             const byCat = groupByCategory(destHotels)
             const flag = region === 'CA' ? '🛣️' : (COUNTRY_FLAGS[dest.country] ?? '')
@@ -388,11 +399,11 @@ export default function HotelesPage() {
                       {isAdmin ? (
                         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={e => handleDragEnd(e, dest.id, cat)}>
                           <SortableContext items={catHotels.map(h => h.id)} strategy={verticalListSortingStrategy}>
-                            {catHotels.map((h, i) => <HotelRow key={h.id} hotel={h} idx={i} isAdmin={true} onNavigate={id => window.location.href = `/hoteles/${id}`} />)}
+                            {catHotels.map((h, i) => <HotelRow key={h.id} hotel={h} idx={i} isAdmin={true} dateRate={dateRates[h.id] ?? null} onNavigate={id => window.location.href = `/hoteles/${id}`} />)}
                           </SortableContext>
                         </DndContext>
                       ) : (
-                        catHotels.map((h, i) => <HotelRow key={h.id} hotel={h} idx={i} isAdmin={false} onNavigate={id => window.location.href = `/hoteles/${id}`} />)
+                        catHotels.map((h, i) => <HotelRow key={h.id} hotel={h} idx={i} isAdmin={false} dateRate={dateRates[h.id] ?? null} onNavigate={id => window.location.href = `/hoteles/${id}`} />)
                       )}
                     </div>
                   )
