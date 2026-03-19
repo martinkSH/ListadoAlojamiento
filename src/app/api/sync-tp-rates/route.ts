@@ -70,7 +70,7 @@ WHERE
   AND OSR.PRICE_CODE = 'NR'              -- Tarifa normal (excluye TD=festivos)
   AND tarifas.costFits > 0
   AND tarifas.costFits < 9000            -- Excluir 9999 (bloqueados)
-  AND OSR.DATE_FROM >= '20260101'        -- Temporada 26-27 en adelante
+  AND OSR.DATE_TO    >= CONVERT(varchar, GETDATE(), 112)
 `
 
 // ── Room type mapping ───────────────────────────────────────────────────────
@@ -110,6 +110,11 @@ export async function POST(req: Request) {
       password: process.env.TP_PASSWORD ?? 'o6rmFv7$RJnp14NzqI18',
       options: { encrypt: true, trustServerCertificate: true, connectTimeout: 30000, requestTimeout: 120000 },
     }
+
+    // Clean up expired periods from previous syncs
+    const today = new Date().toISOString().split('T')[0]
+    await supabase.from('tp_rates').delete().lt('date_to', today)
+    await supabase.from('tp_pc_rates').delete().lt('date_to', today)
 
     const pool = await sql.connect(config)
     const result = await pool.request().query(TP_RATES_QUERY)
@@ -160,8 +165,7 @@ WHERE
   AND OSR.PRICE_CODE = 'NR'
   AND tarifas.costFits > 0
   AND tarifas.costFits < 9000
-  AND OSR.DATE_FROM  >= '20260401'
-  AND OSR.DATE_TO    >= '20260401'
+  AND OSR.DATE_TO    >= CONVERT(varchar, GETDATE(), 112)
 `
 
 
