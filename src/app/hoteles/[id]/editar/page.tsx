@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { HotelTagEditor, type HotelTag } from '@/components/hotels/HotelTags'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -22,7 +22,7 @@ const font = "'Inter','Helvetica Neue',system-ui,sans-serif"
 
 export default function EditarHotelPage({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useRef(createClient()).current
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
