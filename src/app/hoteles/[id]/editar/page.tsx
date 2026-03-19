@@ -20,6 +20,30 @@ const C = {
 }
 const font = "'Inter','Helvetica Neue',system-ui,sans-serif"
 
+const Label = ({ text }: { text: string }) => (
+  <div style={{ fontSize: '10px', fontWeight: 600, color: C.labelColor, letterSpacing: '0.07em', textTransform: 'uppercase' as const, marginBottom: '5px' }}>{text}</div>
+)
+
+const inputSx: React.CSSProperties = {
+  width: '100%', padding: '8px 10px', fontSize: '13px',
+  border: `1px solid ${C.inputBorder}`, borderRadius: '7px',
+  fontFamily: font, outline: 'none', background: C.inputBg,
+  color: C.textDark, boxSizing: 'border-box',
+}
+
+const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <div style={{ background: C.cardBg, border: `0.5px solid ${C.cardBorder}`, borderRadius: '10px', marginBottom: '14px', overflow: 'hidden' }}>
+    <div style={{ padding: '9px 16px', borderBottom: `0.5px solid ${C.cardBorder}`, background: C.cardHeadBg }}>
+      <span style={{ fontSize: '10px', fontWeight: 700, color: C.textMid, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>{title}</span>
+    </div>
+    <div style={{ padding: '16px' }}>{children}</div>
+  </div>
+)
+
+const Grid2 = ({ children }: { children: React.ReactNode }) => (
+  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>{children}</div>
+)
+
 export default function EditarHotelPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const supabase = useRef(createClient()).current
@@ -192,29 +216,7 @@ export default function EditarHotelPage({ params }: { params: { id: string } }) 
     setTimeout(() => router.push(`/hoteles/${params.id}`), 1000)
   }
 
-  const Label = ({ text }: { text: string }) => (
-    <div style={{ fontSize: '10px', fontWeight: 600, color: C.labelColor, letterSpacing: '0.07em', textTransform: 'uppercase' as const, marginBottom: '5px' }}>{text}</div>
-  )
-
-  const inputSx: React.CSSProperties = {
-    width: '100%', padding: '8px 10px', fontSize: '13px',
-    border: `1px solid ${C.inputBorder}`, borderRadius: '7px',
-    fontFamily: font, outline: 'none', background: C.inputBg,
-    color: C.textDark, boxSizing: 'border-box',
-  }
-
-  const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-    <div style={{ background: C.cardBg, border: `0.5px solid ${C.cardBorder}`, borderRadius: '10px', marginBottom: '14px', overflow: 'hidden' }}>
-      <div style={{ padding: '9px 16px', borderBottom: `0.5px solid ${C.cardBorder}`, background: C.cardHeadBg }}>
-        <span style={{ fontSize: '10px', fontWeight: 700, color: C.textMid, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>{title}</span>
-      </div>
-      <div style={{ padding: '16px' }}>{children}</div>
-    </div>
-  )
-
-  const Grid2 = ({ children }: { children: React.ReactNode }) => (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>{children}</div>
-  )
+  // UI helpers are defined outside the component (see below)
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font, color: C.labelColor, fontSize: '13px' }}>
