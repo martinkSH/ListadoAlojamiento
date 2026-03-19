@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -21,7 +21,7 @@ const font = "'Inter','Helvetica Neue',system-ui,sans-serif"
 
 export default function NuevoHotelPage() {
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useRef(createClient()).current
 
   const [destinations, setDestinations] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
