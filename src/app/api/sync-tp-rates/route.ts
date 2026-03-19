@@ -41,11 +41,11 @@ export async function POST(req: Request) {
       .eq('active', true)
       .not('tourplan_code', 'is', null) as any
 
-    const supplierCodes = [...new Set(
+    const supplierCodes = Array.from(new Set(
       (hotels ?? [])
         .map((h: any) => h.tourplan_code?.trim())
         .filter(Boolean)
-    )] as string[]
+    )) as string[]
 
     console.log(`[sync] ${supplierCodes.length} supplier codes to fetch`)
 
