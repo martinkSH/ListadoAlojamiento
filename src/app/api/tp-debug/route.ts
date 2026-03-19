@@ -35,8 +35,7 @@ export async function GET(req: NextRequest) {
       JOIN OSR ON OSR.OPT_ID = OPT.OPT_ID
       JOIN OPD ON OPD.OSR_ID = OSR.OSR_ID
       WHERE OPT.SUPPLIER = '${supplier}'
-      AND OSR.DATE_TO >= CONVERT(varchar, GETDATE(), 112)
-      ORDER BY OSR.DATE_FROM, OPT.DESCRIPTION
+      ORDER BY OSR.DATE_FROM DESC, OPT.DESCRIPTION
     `)
 
     await pool.close()
