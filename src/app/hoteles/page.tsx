@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { HotelTagBadges, type HotelTag } from '@/components/hotels/HotelTags'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -13,22 +13,24 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
+// ── Types ────────────────────────────────────────────────────────────────────
 type DateRate = {
-  sgl_pc: number|null; dbl_pc: number|null; tpl_pc: number|null
-  sgl_nt: number|null; dbl_nt: number|null; tpl_nt: number|null
-  has_pc: boolean; has_nt: boolean  // true = has TP data for this hotel/dest
+  sgl_nt: number | null; dbl_nt: number | null; tpl_nt: number | null
+  sgl_pc: number | null; dbl_pc: number | null; tpl_pc: number | null
+  nt_has_data: boolean; pc_has_data: boolean
 }
 
 type Hotel = {
   id: string; name: string; category: string; priority: number
-  distance_center: string | null; is_direct: boolean; is_family: boolean
-  net_rate_validity: string | null; destination_id: string
-  rates: { room_base: string; pc_rate: number | null; net_rate: number | null; season: string }[]
+  distance_center: string | null; is_direct: boolean
+  destination_id: string
   hotel_tags: HotelTag[]
   tourplan_code: string | null
 }
+
 type Destination = { id: string; code: string; name: string; country: string }
 
+// ── Constants ────────────────────────────────────────────────────────────────
 const CAT_STYLES: Record<string, { bg: string; pill: string; text: string }> = {
   'Inn/Apart':    { bg: '#e8f0fb', pill: '#c7d9f5', text: '#1a3a7a' },
   'Inn':          { bg: '#eeeeee', pill: '#d8d8d8', text: '#333333' },
@@ -44,16 +46,25 @@ const CAT_STYLES: Record<string, { bg: string; pill: string; text: string }> = {
 const CAT_ORDER = ['Inn/Apart','Inn','Inn/Comfort','Comfort','Superior','Superior+','Luxury','Estancia sup','Estancia lux','Otros']
 
 const REGIONS = [
-  { key: 'AR', label: 'Argentina',        flag: '🇦🇷', countries: ['AR'] },
-  { key: 'CA', label: 'Carretera Austral', flag: '🛣️', countries: [] },
-  { key: 'EX', label: 'Exterior',          flag: '🌎', countries: ['CL','PE','UY','PY','CO','EC','BO'] },
-  { key: 'BR', label: 'Brasil',            flag: '🇧🇷', countries: ['BR'] },
+  { key: 'AR', label: 'Argentina',         flag: '🇦🇷', countries: ['AR'] },
+  { key: 'CA', label: 'Carretera Austral',  flag: '🛣️',  countries: [] },
+  { key: 'EX', label: 'Exterior',           flag: '🌎',  countries: ['CL','PE','UY','PY','CO','EC','BO'] },
+  { key: 'BR', label: 'Brasil',             flag: '🇧🇷', countries: ['BR'] },
 ]
-
 const CA_CODES = ['Caleta Tor','Chaitén','Puelo','Hornopirén','La Junta','Aysen','Puyuhuapi','Coyhaique','Villa C. C','Puerto Tra','Chile Chic','Puerto Gua','Cochrane',"Villa O'Hi"]
 const COUNTRY_FLAGS: Record<string, string> = { AR:'🇦🇷',CL:'🇨🇱',BR:'🇧🇷',PE:'🇵🇪',UY:'🇺🇾',PY:'🇵🇾',CO:'🇨🇴',EC:'🇪🇨',BO:'🇧🇴' }
-
 const GRID = '18px 20px 1fr 68px 58px 50px 58px 50px 58px 50px'
+const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+
+const C = {
+  sidebar: '#ede6dd', sidebarBorder: '#d4cbbf',
+  navActive: '#e0d5c8', navActiveBorder: '#9a8878',
+  navText: '#2c2420', navMuted: '#7a6e65', labelMuted: '#9a8d82',
+  topbar: '#ffffff', topbarBorder: '#c4bbb0',
+  colHeader: '#ddd5cb', colHeaderBorder: '#bdb5ac', colHeaderText: '#5a4e45',
+  destHeader: '#cec6bc', destHeaderBorder: '#bdb5ac',
+  destHeaderText: '#2c2420', destMuted: '#7a6e65',
+}
 
 function splitHotelName(fullName: string): { name: string; desc: string } {
   const idx = fullName.search(/\s*\(/)
@@ -61,6 +72,21 @@ function splitHotelName(fullName: string): { name: string; desc: string } {
   return { name: fullName.slice(0, idx).trim(), desc: fullName.slice(idx).trim() }
 }
 
+// ── RateCell — shows value, red dash, or grey dash ───────────────────────────
+function RateCell({ value, hasData, isPC }: { value: number | null; hasData: boolean; isPC: boolean }) {
+  const color = isPC ? '#2c2420' : '#a09080'
+  if (value != null) {
+    return <div style={{ fontSize: '12px', color, textAlign: 'right', fontFamily: 'monospace' }}>${value}</div>
+  }
+  if (hasData) {
+    // Has TP data but no rate for this date → red dash
+    return <div style={{ fontSize: '12px', color: '#e74c3c', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>—</div>
+  }
+  // No TP data at all → grey dash
+  return <div style={{ fontSize: '12px', color: '#d0ccc8', textAlign: 'right', fontFamily: 'monospace' }}>—</div>
+}
+
+// ── HotelRow ─────────────────────────────────────────────────────────────────
 function HotelRow({ hotel, idx, isAdmin, onNavigate, dateRate }: {
   hotel: Hotel; idx: number; isAdmin: boolean
   onNavigate: (id: string) => void
@@ -69,94 +95,84 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate, dateRate }: {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: hotel.id, disabled: !isAdmin })
   const [hovered, setHovered] = useState(false)
-
-  const rates = hotel.rates ?? []
-  const r = (base: string) => rates.find(r => r.room_base === base && r.season === '26-27')
-  const sgl = r('SGL'), dbl = r('DBL'), tpl = r('TPL')
-
-  // PC: use date-specific rate if available, else fallback to rates table
-  const sgl_pc = dateRate?.sgl_pc ?? sgl?.pc_rate ?? null
-  const dbl_pc = dateRate?.dbl_pc ?? dbl?.pc_rate ?? null
-  const tpl_pc = dateRate?.tpl_pc ?? tpl?.pc_rate ?? null
-  // NT: use date-specific rate if available, else fallback to rates table
-  const sgl_nt = dateRate?.sgl_nt ?? sgl?.net_rate ?? null
-  const dbl_nt = dateRate?.dbl_nt ?? dbl?.net_rate ?? null
-  const tpl_nt = dateRate?.tpl_nt ?? tpl?.net_rate ?? null
-
-  const isExpired = hotel.net_rate_validity ? new Date(hotel.net_rate_validity) < new Date() : false
   const baseBg = idx % 2 === 0 ? '#ffffff' : '#f9f6f2'
+  const hasMapping = !!dateRate  // if hotel is in dateRate result, it has mapping+data
 
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1,
-        display: 'grid', gridTemplateColumns: GRID, padding: '5px 14px',
-        borderBottom: '0.5px solid #ddd8d0', background: hovered ? '#eee8e0' : baseBg,
-        alignItems: 'center', cursor: 'pointer' }}
-      onClick={e => {
-        const t = e.target as HTMLElement
-        if (t.closest('[data-tag-link]')) return
-        onNavigate(hotel.id)
+      style={{
+        transform: CSS.Transform.toString(transform), transition,
+        opacity: isDragging ? 0.4 : 1,
+        display: 'grid', gridTemplateColumns: GRID,
+        padding: '5px 14px', borderBottom: '0.5px solid #ddd8d0',
+        background: hovered ? '#eee8e0' : baseBg,
+        alignItems: 'center', cursor: 'pointer',
       }}
+      onClick={e => { if ((e.target as HTMLElement).closest('[data-tag-link]')) return; onNavigate(hotel.id) }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
+      {/* Drag handle */}
       <div {...(isAdmin ? { ...attributes, ...listeners } : {})} onClick={e => e.stopPropagation()}
         style={{ color: isAdmin ? '#a89880' : 'transparent', fontSize: '14px', cursor: isAdmin ? 'grab' : 'default' }}>⠿</div>
+
+      {/* Index */}
       <div style={{ fontSize: '10px', color: '#a09080', fontWeight: 600, fontFamily: 'monospace' }}>
         {String.fromCharCode(64 + (idx + 1))}
       </div>
+
+      {/* Hotel name */}
       <div style={{ minWidth: 0, paddingRight: '8px' }}>
         {(() => {
           const { name, desc } = splitHotelName(hotel.name)
           return <>
-            <div style={{ fontSize: '12px', color: isExpired ? '#c0392b' : '#2c2420', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: '12px', color: '#2c2420', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {name}
-              {!hotel.tourplan_code && <span style={{ marginLeft: '3px', color: '#e57373', fontSize: '11px', fontWeight: 700 }} title="Sin código TourPlan">*</span>}
+              {!hotel.tourplan_code && (
+                <span style={{ marginLeft: '4px', fontSize: '9px', color: '#e57373', fontWeight: 700 }} title="Sin código TourPlan">*</span>
+              )}
+              {hotel.tourplan_code && !dateRate && (
+                <span style={{ marginLeft: '4px', fontSize: '9px', color: '#f59e0b', fontWeight: 700 }} title="Sin mapeo de habitación">⚠</span>
+              )}
               {hotel.tourplan_code && <span style={{ marginLeft: '5px', fontSize: '9px', color: '#b8a99a', fontFamily: 'monospace' }}>#{hotel.tourplan_code}</span>}
               <HotelTagBadges tags={hotel.hotel_tags ?? []} />
               {!hotel.is_direct && <span style={{ marginLeft: '5px', fontSize: '9px', color: '#3d1580', background: '#d5ccf5', padding: '0 5px', borderRadius: '3px', fontWeight: 600 }}>PLT</span>}
             </div>
-            {(desc || hotel.distance_center) && (
+            {desc && (
               <div style={{ fontSize: '10px', color: '#a09080', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {desc}{desc && hotel.distance_center ? ' · ' : ''}{hotel.distance_center}
+                {desc}{hotel.distance_center ? ` · ${hotel.distance_center}` : ''}
               </div>
             )}
           </>
         })()}
       </div>
+
+      {/* Category */}
       <div style={{ fontSize: '10px', color: CAT_STYLES[hotel.category]?.text ?? '#333', textAlign: 'right', paddingRight: '4px', fontWeight: 500 }}>
         {hotel.category.replace('Inn/Apart','Inn/Apt').replace('Estancia sup','Est.sup').replace('Estancia lux','Est.lux')}
       </div>
-      {[
-        { val: sgl_pc, isPC: true }, { val: sgl_nt, isPC: false },
-        { val: dbl_pc, isPC: true }, { val: dbl_nt, isPC: false },
-        { val: tpl_pc, isPC: true }, { val: tpl_nt, isPC: false },
-      ].map(({ val, isPC }, i) => {
-        const hasData = isPC ? dateRate?.has_pc : dateRate?.has_nt
-        const noDateRate = dateRate && val == null && hasData
-        return (
-          <div key={i} style={{ fontSize: '12px', color: i % 2 === 0 ? '#2c2420' : '#a09080', textAlign: 'right', fontFamily: 'monospace' }}>
-            {val != null
-              ? `$${val}`
-              : noDateRate
-                ? <span style={{ color: '#e74c3c', fontWeight: 700 }}>—</span>
-                : <span style={{ color: '#ccc8c0' }}>—</span>
-            }
-          </div>
-        )
-      })}
+
+      {/* Rate cells: SGL PC, SGL NT, DBL PC, DBL NT, TPL PC, TPL NT */}
+      <RateCell value={dateRate?.sgl_pc ?? null} hasData={dateRate?.pc_has_data ?? false} isPC={true} />
+      <RateCell value={dateRate?.sgl_nt ?? null} hasData={dateRate?.nt_has_data ?? false} isPC={false} />
+      <RateCell value={dateRate?.dbl_pc ?? null} hasData={dateRate?.pc_has_data ?? false} isPC={true} />
+      <RateCell value={dateRate?.dbl_nt ?? null} hasData={dateRate?.nt_has_data ?? false} isPC={false} />
+      <RateCell value={dateRate?.tpl_pc ?? null} hasData={dateRate?.pc_has_data ?? false} isPC={true} />
+      <RateCell value={dateRate?.tpl_nt ?? null} hasData={dateRate?.nt_has_data ?? false} isPC={false} />
     </div>
   )
 }
 
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function HotelesPage() {
-  const supabase = createClient()
+  const supabase = useRef(createClient()).current
   const [destinations, setDestinations] = useState<Destination[]>([])
   const [hotels, setHotels] = useState<Hotel[]>([])
   const [region, setRegion] = useState('AR')
   const [search, setSearch] = useState('')
   const [viewDate, setViewDate] = useState('')
+  const [defaultDate, setDefaultDate] = useState('')
   const [dateRates, setDateRates] = useState<Record<string, DateRate>>({})
   const [loadingRates, setLoadingRates] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -169,43 +185,43 @@ export default function HotelesPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
-  async function fetchRatesForDate(date: string) {
-    if (!date) return
-    setLoadingRates(true)
-    try {
-      const res = await fetch(`/api/rates-for-date?date=${date}`)
-      const json = await res.json()
-      const map: Record<string, DateRate> = {}
-      for (const r of (json.rates ?? [])) map[r.hotel_id] = r
-      setDateRates(map)
-    } catch (e) {
-      console.error('fetchRatesForDate error', e)
-    }
-    setLoadingRates(false)
-  }
-
-  // Load default date from app_settings on mount
+  // Load default date on mount
   useEffect(() => {
     async function loadDefaultDate() {
       try {
-        const { data } = await supabase
-          .from('app_settings')
-          .select('value')
-          .eq('key', 'default_view_date')
-          .single() as any
+        const { data } = await supabase.from('app_settings').select('value').eq('key', 'default_view_date').single() as any
         const date = data?.value ?? new Date().toISOString().split('T')[0]
+        setDefaultDate(date)
         setViewDate(date)
       } catch {
-        setViewDate(new Date().toISOString().split('T')[0])
+        const today = new Date().toISOString().split('T')[0]
+        setDefaultDate(today)
+        setViewDate(today)
       }
     }
     loadDefaultDate()
   }, [])
 
+  // Fetch rates when date changes
   useEffect(() => {
-    if (viewDate) fetchRatesForDate(viewDate)
+    if (!viewDate) return
+    async function fetchRates() {
+      setLoadingRates(true)
+      try {
+        const res = await fetch(`/api/rates-for-date?date=${viewDate}`)
+        const json = await res.json()
+        const map: Record<string, DateRate> = {}
+        for (const r of (json.rates ?? [])) map[r.hotel_id] = r
+        setDateRates(map)
+      } catch (e) {
+        console.error('fetchRates error', e)
+      }
+      setLoadingRates(false)
+    }
+    fetchRates()
   }, [viewDate])
 
+  // Load hotels when region changes
   useEffect(() => { loadData() }, [region])
 
   async function loadData() {
@@ -214,13 +230,11 @@ export default function HotelesPage() {
     if (!user) { window.location.href = '/login'; return }
     setUserEmail(user.email ?? '')
 
-    const { data: dests } = await supabase
-      .from('destinations').select('id,code,name,country').eq('active', true).order('name')
+    const { data: dests } = await supabase.from('destinations').select('id,code,name,country').eq('active', true).order('name')
     setDestinations((dests ?? []) as Destination[])
 
     const allDests = (dests ?? []) as Destination[]
     let destIds: string[]
-
     if (region === 'CA') {
       destIds = allDests.filter(d => CA_CODES.includes(d.code)).map(d => d.id)
     } else {
@@ -232,7 +246,7 @@ export default function HotelesPage() {
 
     const { data: h } = await supabase
       .from('hotels')
-      .select('id,name,category,priority,distance_center,is_direct,is_family,net_rate_validity,destination_id,tourplan_code,rates(room_base,pc_rate,net_rate,season),hotel_tags(id,tag_type,tag_value,tag_link)')
+      .select('id,name,category,priority,distance_center,is_direct,destination_id,tourplan_code,hotel_tags(id,tag_type,tag_value,tag_link)')
       .eq('active', true).in('destination_id', destIds).order('priority')
     setHotels((h ?? []) as Hotel[])
     setLoading(false)
@@ -250,22 +264,16 @@ export default function HotelesPage() {
     const q = search.toLowerCase()
     return list.filter(d => {
       if (d.code.toLowerCase().includes(q) || d.name.toLowerCase().includes(q)) return true
-      const destHotels = hotels.filter(h => h.destination_id === d.id)
-      return destHotels.some(h => {
-        const { name: hotelName } = splitHotelName(h.name)
-        return hotelName.toLowerCase().includes(q) || h.name.toLowerCase().includes(q)
-      })
+      return hotels.filter(h => h.destination_id === d.id).some(h => h.name.toLowerCase().includes(q))
     })
   })()
 
-  function getFilteredHotels(destId: string) {
+  function getHotels(destId: string) {
     const destHotels = hotels.filter(h => h.destination_id === destId)
     if (!search) return destHotels
     const q = search.toLowerCase()
     return destHotels.filter(h => h.name.toLowerCase().includes(q))
   }
-
-  function getHotels(destId: string) { return hotels.filter(h => h.destination_id === destId) }
 
   function groupByCategory(list: Hotel[]) {
     return CAT_ORDER.reduce((acc: Record<string, Hotel[]>, cat) => {
@@ -278,31 +286,37 @@ export default function HotelesPage() {
   async function handleDragEnd(e: DragEndEvent, destId: string, cat: string) {
     const { active, over } = e
     if (!over || active.id === over.id) return
-    const catHotels = getHotels(destId).filter(h => h.category === cat)
+    const catHotels = hotels.filter(h => h.destination_id === destId && h.category === cat)
     const oi = catHotels.findIndex(h => h.id === active.id)
     const ni = catHotels.findIndex(h => h.id === over.id)
     if (oi === -1 || ni === -1) return
     const reordered = arrayMove(catHotels, oi, ni)
-    setHotels(prev => prev.map(h => { const i = reordered.findIndex(r => r.id === h.id); return i !== -1 ? { ...h, priority: i+1 } : h }))
+    setHotels(prev => prev.map(h => { const i = reordered.findIndex(r => r.id === h.id); return i !== -1 ? { ...h, priority: i + 1 } : h }))
     setSaving(true)
-    await Promise.all(reordered.map((h, i) => supabase.from('hotels').update({ priority: i+1 }).eq('id', h.id)))
+    await Promise.all(reordered.map((h, i) => supabase.from('hotels').update({ priority: i + 1 }).eq('id', h.id)))
     setSaving(false)
   }
 
   const totalHotels = hotels.filter(h => filteredDests.some(d => d.id === h.destination_id)).length
 
-  const C = {
-    sidebar: '#ede6dd', sidebarBorder: '#d4cbbf',
-    navActive: '#e0d5c8', navActiveBorder: '#9a8878',
-    navText: '#2c2420', navMuted: '#7a6e65', labelMuted: '#9a8d82',
-    topbar: '#ffffff', topbarBorder: '#c4bbb0',
-    colHeader: '#ddd5cb', colHeaderBorder: '#bdb5ac', colHeaderText: '#5a4e45',
-    destHeader: '#cec6bc', destHeaderBorder: '#bdb5ac',
-    destHeaderText: '#2c2420', destMuted: '#7a6e65',
+  // Date selector helpers
+  const [vy, vm, vd] = viewDate ? viewDate.split('-') : ['2026', '01', '01']
+  const days = Array.from({ length: 31 }, (_, i) => i + 1)
+  const years = ['2026', '2027']
+  const selSx: React.CSSProperties = {
+    fontSize: '11px', padding: '4px 6px', border: '1px solid #ddd5cb',
+    borderRadius: '6px', background: '#faf7f3', color: '#2c2420',
+    fontFamily: "'Inter','Helvetica Neue',system-ui,sans-serif",
+    outline: 'none', cursor: 'pointer',
+  }
+  function updateDate(y: string, m: string, d: string) {
+    if (y && m && d) setViewDate(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`)
   }
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#f5f0ea', fontFamily: "'Inter','Helvetica Neue',system-ui,sans-serif" }}>
+
+      {/* SIDEBAR */}
       <aside style={{ width: '188px', minWidth: '188px', background: C.sidebar, borderRight: `0.5px solid ${C.sidebarBorder}`, display: 'flex', flexDirection: 'column', height: '100vh', overflowY: 'auto', flexShrink: 0 }}>
         <div style={{ padding: '16px 14px 12px', borderBottom: `0.5px solid ${C.sidebarBorder}` }}>
           <div style={{ fontSize: '13px', fontWeight: 600, color: C.navText }}>Say Hueque</div>
@@ -352,8 +366,13 @@ export default function HotelesPage() {
         </div>
       </aside>
 
+      {/* MAIN */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+        {/* Top bar */}
         <div style={{ flexShrink: 0, padding: '8px 14px', borderBottom: `1px solid ${C.topbarBorder}`, background: C.topbar, display: 'flex', alignItems: 'center', gap: '10px' }}>
+
+          {/* Search */}
           <div style={{ position: 'relative', flex: 1, maxWidth: '340px' }}>
             <span style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: '#a09080', fontSize: '13px', pointerEvents: 'none' }}>⌕</span>
             <input
@@ -363,51 +382,52 @@ export default function HotelesPage() {
             />
             {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#a09080', fontSize: '13px', padding: 0 }}>✕</button>}
           </div>
-          {(() => {
-            const [y, m, d] = viewDate ? viewDate.split('-') : ['2026', '05', '01']
-            const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
-            const days = Array.from({length: 31}, (_: any, i: number) => i + 1)
-            const years = ['2026', '2027']
-            const selSx: React.CSSProperties = {
-              fontSize: '11px', padding: '4px 6px', border: '1px solid #ddd5cb',
-              borderRadius: '6px', background: '#faf7f3', color: '#2c2420',
-              fontFamily: "'Inter','Helvetica Neue',system-ui,sans-serif",
-              outline: 'none', cursor: 'pointer',
-            }
-            const updateDate = (newY: string, newM: string, newD: string) => {
-              if (newY && newM && newD) setViewDate(`${newY}-${newM.padStart(2,'0')}-${newD.padStart(2,'0')}`)
-            }
-            return (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ fontSize: '10px', color: '#9a8d82', whiteSpace: 'nowrap' }}>Ver tarifas al:</span>
-                <select value={d} onChange={e => updateDate(y, m, e.target.value)} style={selSx}>
-                  {days.map((day: number) => <option key={day} value={String(day).padStart(2,'0')}>{day}</option>)}
-                </select>
-                <select value={m} onChange={e => updateDate(y, e.target.value, d)} style={selSx}>
-                  {months.map((mn: string, i: number) => <option key={i+1} value={String(i+1).padStart(2,'0')}>{mn}</option>)}
-                </select>
-                <select value={y} onChange={e => updateDate(e.target.value, m, d)} style={selSx}>
-                  {years.map((yr: string) => <option key={yr} value={yr}>{yr}</option>)}
-                </select>
-                <button onClick={() => setViewDate(new Date().toISOString().split('T')[0])}
-                  style={{ fontSize: '10px', color: '#9a8d82', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}>
-                  Hoy
-                </button>
-                {loadingRates && <span style={{ fontSize: '10px', color: '#b8a99a' }}>actualizando...</span>}
-              </div>
-            )
-          })()}
+
+          {/* Date selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '10px', color: '#9a8d82', whiteSpace: 'nowrap' }}>Tarifas al:</span>
+            <select value={vd} onChange={e => updateDate(vy, vm, e.target.value)} style={selSx}>
+              {days.map(d => <option key={d} value={String(d).padStart(2, '0')}>{d}</option>)}
+            </select>
+            <select value={vm} onChange={e => updateDate(vy, e.target.value, vd)} style={selSx}>
+              {MONTHS.map((mn, i) => <option key={i + 1} value={String(i + 1).padStart(2, '0')}>{mn}</option>)}
+            </select>
+            <select value={vy} onChange={e => updateDate(e.target.value, vm, vd)} style={selSx}>
+              {years.map(yr => <option key={yr} value={yr}>{yr}</option>)}
+            </select>
+            <button
+              onClick={() => setViewDate(defaultDate)}
+              style={{ fontSize: '10px', color: '#9a8d82', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}
+            >Resetear</button>
+            {loadingRates && <span style={{ fontSize: '10px', color: '#b8a99a' }}>cargando...</span>}
+          </div>
+
           <div style={{ marginLeft: 'auto', fontSize: '11px', color: C.navMuted, fontWeight: 500 }}>
             {filteredDests.length} destinos · {totalHotels} hoteles
           </div>
         </div>
 
+        {/* Column headers */}
         <div style={{ flexShrink: 0, display: 'grid', gridTemplateColumns: GRID, padding: '6px 14px', background: C.colHeader, borderBottom: `1px solid ${C.colHeaderBorder}` }}>
           {['', '#', 'Hotel', 'Categ.', 'SGL PC', 'NT', 'DBL PC', 'NT', 'TPL PC', 'NT'].map((h, i) => (
             <div key={i} style={{ fontSize: '10px', fontWeight: 700, color: C.colHeaderText, letterSpacing: '0.07em', textTransform: 'uppercase', textAlign: i > 2 ? 'right' as const : 'left' as const }}>{h}</div>
           ))}
         </div>
 
+
+        {/* Legend */}
+        <div style={{ flexShrink: 0, padding: '6px 14px', borderTop: `0.5px solid ${C.colHeaderBorder}`, background: C.colHeader, display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' as const }}>
+          <span style={{ fontSize: '9px', color: C.colHeaderText, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>Referencias:</span>
+          <span style={{ fontSize: '10px', color: '#e74c3c', fontFamily: 'monospace', fontWeight: 700 }}>—</span>
+          <span style={{ fontSize: '10px', color: C.destMuted }}>Sin tarifa para esa fecha</span>
+          <span style={{ fontSize: '10px', color: '#d0ccc8', fontFamily: 'monospace' }}>—</span>
+          <span style={{ fontSize: '10px', color: C.destMuted }}>Sin datos en TourPlan</span>
+          <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 700 }}>⚠</span>
+          <span style={{ fontSize: '10px', color: C.destMuted }}>Sin mapeo de habitación</span>
+          <span style={{ fontSize: '10px', color: '#e57373', fontWeight: 700 }}>*</span>
+          <span style={{ fontSize: '10px', color: C.destMuted }}>Sin código TourPlan</span>
+        </div>
+        {/* Scrollable list */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {loading ? (
             <div style={{ padding: '48px', textAlign: 'center', color: C.navMuted, fontSize: '13px' }}>Cargando...</div>
@@ -416,7 +436,7 @@ export default function HotelesPage() {
               No se encontraron destinos{search ? ` para "${search}"` : ''}
             </div>
           ) : filteredDests.map(dest => {
-            const destHotels = getFilteredHotels(dest.id)
+            const destHotels = getHotels(dest.id)
             if (!destHotels.length) return null
             const byCat = groupByCategory(destHotels)
             const flag = region === 'CA' ? '🛣️' : (COUNTRY_FLAGS[dest.country] ?? '')
@@ -440,11 +460,19 @@ export default function HotelesPage() {
                       {isAdmin ? (
                         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={e => handleDragEnd(e, dest.id, cat)}>
                           <SortableContext items={catHotels.map(h => h.id)} strategy={verticalListSortingStrategy}>
-                            {catHotels.map((h, i) => <HotelRow key={h.id} hotel={h} idx={i} isAdmin={true} dateRate={dateRates[h.id] ?? null} onNavigate={id => window.location.href = `/hoteles/${id}`} />)}
+                            {catHotels.map((h, i) => (
+                              <HotelRow key={h.id} hotel={h} idx={i} isAdmin={true}
+                                dateRate={dateRates[h.id] ?? null}
+                                onNavigate={id => window.location.href = `/hoteles/${id}`} />
+                            ))}
                           </SortableContext>
                         </DndContext>
                       ) : (
-                        catHotels.map((h, i) => <HotelRow key={h.id} hotel={h} idx={i} isAdmin={false} dateRate={dateRates[h.id] ?? null} onNavigate={id => window.location.href = `/hoteles/${id}`} />)
+                        catHotels.map((h, i) => (
+                          <HotelRow key={h.id} hotel={h} idx={i} isAdmin={false}
+                            dateRate={dateRates[h.id] ?? null}
+                            onNavigate={id => window.location.href = `/hoteles/${id}`} />
+                        ))
                       )}
                     </div>
                   )
