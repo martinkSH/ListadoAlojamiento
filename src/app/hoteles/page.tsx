@@ -13,7 +13,11 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-type DateRate = { sgl_pc: number|null; dbl_pc: number|null; tpl_pc: number|null; sgl_nt: number|null; dbl_nt: number|null; tpl_nt: number|null }
+type DateRate = {
+  sgl_pc: number|null; dbl_pc: number|null; tpl_pc: number|null
+  sgl_nt: number|null; dbl_nt: number|null; tpl_nt: number|null
+  has_pc: boolean; has_nt: boolean  // true = has TP data for this hotel/dest
+}
 
 type Hotel = {
   id: string; name: string; category: string; priority: number
@@ -124,11 +128,24 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate, dateRate }: {
       <div style={{ fontSize: '10px', color: CAT_STYLES[hotel.category]?.text ?? '#333', textAlign: 'right', paddingRight: '4px', fontWeight: 500 }}>
         {hotel.category.replace('Inn/Apart','Inn/Apt').replace('Estancia sup','Est.sup').replace('Estancia lux','Est.lux')}
       </div>
-      {[sgl_pc, sgl_nt, dbl_pc, dbl_nt, tpl_pc, tpl_nt].map((val, i) => (
-        <div key={i} style={{ fontSize: '12px', color: i % 2 === 0 ? '#2c2420' : '#a09080', textAlign: 'right', fontFamily: 'monospace' }}>
-          {val != null ? `$${val}` : <span style={{ color: '#ccc8c0' }}>—</span>}
-        </div>
-      ))}
+      {[
+        { val: sgl_pc, isPC: true }, { val: sgl_nt, isPC: false },
+        { val: dbl_pc, isPC: true }, { val: dbl_nt, isPC: false },
+        { val: tpl_pc, isPC: true }, { val: tpl_nt, isPC: false },
+      ].map(({ val, isPC }, i) => {
+        const hasData = isPC ? dateRate?.has_pc : dateRate?.has_nt
+        const noDateRate = dateRate && val == null && hasData
+        return (
+          <div key={i} style={{ fontSize: '12px', color: i % 2 === 0 ? '#2c2420' : '#a09080', textAlign: 'right', fontFamily: 'monospace' }}>
+            {val != null
+              ? `$${val}`
+              : noDateRate
+                ? <span style={{ color: '#e74c3c', fontWeight: 700 }}>—</span>
+                : <span style={{ color: '#ccc8c0' }}>—</span>
+            }
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -348,12 +365,17 @@ export default function HotelesPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '10px', color: '#9a8d82', whiteSpace: 'nowrap' }}>Ver tarifas al:</span>
-            <input
-              type="date"
-              value={viewDate}
-              onChange={e => setViewDate(e.target.value)}
-              style={{ fontSize: '11px', padding: '4px 8px', border: '1px solid #ddd5cb', borderRadius: '6px', background: '#faf7f3', color: '#2c2420', fontFamily: "'Inter','Helvetica Neue',system-ui,sans-serif", outline: 'none' }}
-            />
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <input
+                type="date"
+                value={viewDate}
+                onChange={e => setViewDate(e.target.value)}
+                style={{ fontSize: '11px', padding: '4px 8px', border: '1px solid #ddd5cb', borderRadius: '6px', background: '#faf7f3', color: 'transparent', fontFamily: "'Inter','Helvetica Neue',system-ui,sans-serif", outline: 'none', width: '120px' }}
+              />
+              <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: '#2c2420', pointerEvents: 'none' }}>
+                {viewDate ? viewDate.split('-').reverse().join('/') : ''}
+              </span>
+            </div>
             <button
               onClick={() => setViewDate(new Date().toISOString().split('T')[0])}
               style={{ fontSize: '10px', color: '#9a8d82', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
