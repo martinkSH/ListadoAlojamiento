@@ -52,6 +52,9 @@ export default function AjustesPage() {
   const [userId, setUserId] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [defaultDate, setDefaultDate] = useState('')
+  const [savingDate, setSavingDate] = useState(false)
+  const [dateSaved, setDateSaved] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -69,6 +72,31 @@ export default function AjustesPage() {
     }
     load()
   }, [])
+
+  useEffect(() => {
+    async function loadDefaultDate() {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'default_view_date')
+        .single() as any
+      if (data?.value) setDefaultDate(data.value)
+    }
+    loadDefaultDate()
+  }, [])
+
+  async function saveDefaultDate() {
+    if (!defaultDate) return
+    setSavingDate(true)
+    setDateSaved(false)
+    const supabase = createClient()
+    await supabase.from('app_settings')
+      .upsert({ key: 'default_view_date', value: defaultDate, updated_at: new Date().toISOString() })
+    setSavingDate(false)
+    setDateSaved(true)
+    setTimeout(() => setDateSaved(false), 3000)
+  }
 
   async function handleSyncTP() {
     setSyncing(true)
@@ -275,6 +303,41 @@ export default function AjustesPage() {
                     {syncResult.msg}
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Fecha default del listado */}
+            <div style={{ background: C.card, border: `0.5px solid ${C.cardBorder}`, borderRadius: '10px', marginBottom: '16px', overflow: 'hidden' }}>
+              <div style={{ padding: '9px 16px', borderBottom: `0.5px solid ${C.cardBorder}`, background: C.cardHead }}>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>Fecha default del listado</span>
+              </div>
+              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' as const }}>
+                <div>
+                  <div style={{ fontSize: '10px', color: C.label, marginBottom: '4px' }}>Los usuarios verán esta fecha al abrir el listado</div>
+                  <input
+                    type="date"
+                    value={defaultDate}
+                    onChange={e => setDefaultDate(e.target.value)}
+                    style={{
+                      fontSize: '12px', padding: '6px 10px', border: `1px solid ${C.inputBorder}`,
+                      borderRadius: '6px', background: C.input, color: C.text,
+                      fontFamily: font, outline: 'none',
+                    }}
+                  />
+                </div>
+                <button
+                  onClick={saveDefaultDate}
+                  disabled={savingDate || !defaultDate}
+                  style={{
+                    padding: '8px 20px', fontSize: '12px', fontWeight: 600, fontFamily: font,
+                    background: savingDate ? '#a09080' : C.btnPrimary, color: '#fff',
+                    border: 'none', borderRadius: '7px', cursor: savingDate ? 'not-allowed' : 'pointer',
+                    marginTop: '16px',
+                  }}
+                >
+                  {savingDate ? 'Guardando...' : 'Guardar'}
+                </button>
+                {dateSaved && <span style={{ fontSize: '12px', color: '#27ae60', marginTop: '16px' }}>✓ Guardado</span>}
               </div>
             </div>
 
