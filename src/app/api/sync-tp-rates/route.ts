@@ -319,13 +319,11 @@ WHERE
     const pcRows = pcResult.recordset as any[]
     console.log(`[tp-rates] PC rows from TP: ${pcRows.length}`)
 
-    // Build category map: 'INN' → 'Inn', 'COMFORT' → 'Comfort', etc.
     const CAT_MAP: Record<string, string> = {
       'INN': 'Inn', 'COMFORT': 'Comfort', 'SUPERIOR': 'Superior',
       'LUXURY': 'Luxury', 'APART': 'Inn/Apart',
     }
 
-    // Parse option_desc: "COMFORT BUE" → { cat: 'Comfort', destCode: 'BUE' }
     const parseOptionDesc = (desc: string): { cat: string; destCode: string } | null => {
       const parts = desc.trim().split(' ')
       if (parts.length < 2) return null
@@ -336,19 +334,8 @@ WHERE
       return { cat, destCode }
     }
 
-    // Get all destinations
-    const { data: allDests } = await supabase.from('destinations').select('id, code') as any
-    const destMap = new Map<string, string>()
-    for (const d of (allDests ?? [])) destMap.set(d.code, d.id)
-
-    // Get all hotels with category and destination
-    const { data: allHotels } = await supabase
-      .from('hotels')
-      .select('id, category, destination_id')
-      .eq('active', true) as any
-
-    // Build PC rate map: destCode+cat+roomBase+dateFrom → rate
-    const pcRateMap = new Map<string, any>()
+    // Build PC rate rows per period (dest_code + category + room_base + date_from)
+    const pcPeriodMap = new Map<string, any>()
     for (const row of pcRows) {
       const roomBase = ROOM_MAP[row.roomType]
       if (!roomBase) continue
@@ -362,47 +349,58 @@ WHERE
       const dateTo = row.dateTo instanceof Date
         ? row.dateTo.toISOString().split('T')[0]
         : String(row.dateTo ?? '').slice(0, 10)
+      if (!dateFrom) continue
       const key = `${parsed.destCode}__${parsed.cat}__${roomBase}__${dateFrom}`
-      pcRateMap.set(key, { ...parsed, roomBase, cost, dateFrom, dateTo })
-    }
-
-    // Update pc_rate in rates table for each hotel
-    let pcUpdated = 0
-    for (const hotel of (allHotels ?? [])) {
-      const destCode = destMap.get(hotel.destination_id) 
-      // Need dest code from id - rebuild reverse map
-      const destCodeForHotel = Array.from(destMap.entries()).find(([code, id]) => id === hotel.destination_id)?.[0]
-      if (!destCodeForHotel || !hotel.category) continue
-
-      // Find max PC rate for this dest+category across all periods for season
-      for (const base of ['SGL', 'DBL', 'TPL']) {
-        let maxRate = 0
-        let maxDateFrom = ''
-        let maxDateTo = ''
-        for (const [key, val] of Array.from(pcRateMap.entries())) {
-          if (val.destCode === destCodeForHotel && val.cat === hotel.category && val.roomBase === base) {
-            if (val.cost > maxRate) {
-              maxRate = val.cost
-              maxDateFrom = val.dateFrom
-              maxDateTo = val.dateTo
-            }
-          }
-        }
-        if (!maxRate) continue
-
-        const { error } = await supabase
-          .from('rates')
-          .upsert({
-            hotel_id: hotel.id,
-            room_base: base,
-            season: '26-27',
-            pc_rate: maxRate,
-          }, { onConflict: 'hotel_id,season,room_base' })
-        if (!error) pcUpdated++
+      if (!pcPeriodMap.has(key)) {
+        pcPeriodMap.set(key, {
+          dest_code: parsed.destCode,
+          category: parsed.cat,
+          room_base: roomBase,
+          pc_rate: cost,
+          date_from: dateFrom,
+          date_to: dateTo,
+          season: '26-27',
+          synced_at: startedAt,
+        })
       }
     }
 
-    console.log(`[tp-rates] PC rates updated: ${pcUpdated}`)
+    const pcRows2 = Array.from(pcPeriodMap.values())
+
+    // Upsert into tp_pc_rates
+    let pcUpdated = 0
+    const PC_BATCH = 500
+    for (let i = 0; i < pcRows2.length; i += PC_BATCH) {
+      const chunk = pcRows2.slice(i, i + PC_BATCH)
+      const { error } = await supabase
+        .from('tp_pc_rates')
+        .upsert(chunk, { onConflict: 'dest_code,category,room_base,date_from' })
+      if (!error) pcUpdated += chunk.length
+    }
+
+    // Also update rates table with max PC for season (for fallback display)
+    const { data: allHotels } = await supabase
+      .from('hotels').select('id, category, destination_id').eq('active', true) as any
+    const { data: allDestsData } = await supabase.from('destinations').select('id, code') as any
+    const destCodeMap = new Map<string, string>()
+    for (const d of (allDestsData ?? [])) destCodeMap.set(d.id, d.code)
+
+    for (const hotel of (allHotels ?? [])) {
+      const destCode = destCodeMap.get(hotel.destination_id)
+      if (!destCode || !hotel.category) continue
+      for (const base of ['SGL', 'DBL', 'TPL']) {
+        const matching = pcRows2.filter(r =>
+          r.dest_code === destCode && r.category === hotel.category && r.room_base === base
+        )
+        if (!matching.length) continue
+        const maxRate = Math.max(...matching.map((r: any) => r.pc_rate))
+        await supabase.from('rates').upsert({
+          hotel_id: hotel.id, room_base: base, season: '26-27', pc_rate: maxRate,
+        }, { onConflict: 'hotel_id,season,room_base' })
+      }
+    }
+
+    console.log(`[tp-rates] PC periods stored: ${pcUpdated}`)
 
     // Log sync
     await supabase.from('tp_sync_log').insert({
