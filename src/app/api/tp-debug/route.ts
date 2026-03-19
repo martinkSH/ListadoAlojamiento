@@ -17,12 +17,13 @@ export async function GET(req: NextRequest) {
   try {
     const pool = await sql.connect(config)
 
-    // Raw query — no filters, just show what TP has for this supplier
+    // Raw query — absolutely no filters
     const result = await pool.request().query(`
-      SELECT TOP 50
+      SELECT TOP 100
         OPT.SUPPLIER,
         OPT.DESCRIPTION AS optionDesc,
         OPT.AC,
+        OPT.SERVICE,
         OSR.PRICE_CODE,
         OSR.DATE_FROM,
         OSR.DATE_TO,
@@ -35,7 +36,8 @@ export async function GET(req: NextRequest) {
       JOIN OSR ON OSR.OPT_ID = OPT.OPT_ID
       JOIN OPD ON OPD.OSR_ID = OSR.OSR_ID
       WHERE OPT.SUPPLIER = '${supplier}'
-      ORDER BY OSR.DATE_FROM DESC, OPT.DESCRIPTION
+      AND OPD.AGE_CATEGORY = 'AD'
+      ORDER BY OSR.DATE_FROM ASC, OPT.DESCRIPTION
     `)
 
     await pool.close()
