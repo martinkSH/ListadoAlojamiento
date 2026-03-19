@@ -314,16 +314,35 @@ export default function AjustesPage() {
               <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' as const }}>
                 <div>
                   <div style={{ fontSize: '10px', color: C.label, marginBottom: '4px' }}>Los usuarios verán esta fecha al abrir el listado</div>
-                  <input
-                    type="date"
-                    value={defaultDate}
-                    onChange={e => setDefaultDate(e.target.value)}
-                    style={{
-                      fontSize: '12px', padding: '6px 10px', border: `1px solid ${C.inputBorder}`,
+                  {(() => {
+                    const [y, m, d] = defaultDate ? defaultDate.split('-') : ['2026', '05', '01']
+                    const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+                    const days = Array.from({length: 31}, (_: any, i: number) => i + 1)
+                    const years = ['2026', '2027']
+                    const selSx: React.CSSProperties = {
+                      fontSize: '12px', padding: '6px 8px', border: `1px solid ${C.inputBorder}`,
                       borderRadius: '6px', background: C.input, color: C.text,
-                      fontFamily: font, outline: 'none',
-                    }}
-                  />
+                      fontFamily: font, outline: 'none', cursor: 'pointer',
+                    }
+                    const updateDate = (newY: string, newM: string, newD: string) => {
+                      if (newY && newM && newD) {
+                        setDefaultDate(`${newY}-${newM.padStart(2,'0')}-${newD.padStart(2,'0')}`)
+                      }
+                    }
+                    return (
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <select value={d} onChange={e => updateDate(y, m, e.target.value)} style={selSx}>
+                          {days.map((day: number) => <option key={day} value={String(day).padStart(2,'0')}>{day}</option>)}
+                        </select>
+                        <select value={m} onChange={e => updateDate(y, e.target.value, d)} style={selSx}>
+                          {months.map((mn: string, i: number) => <option key={i+1} value={String(i+1).padStart(2,'0')}>{mn}</option>)}
+                        </select>
+                        <select value={y} onChange={e => updateDate(e.target.value, m, d)} style={selSx}>
+                          {years.map((yr: string) => <option key={yr} value={yr}>{yr}</option>)}
+                        </select>
+                      </div>
+                    )
+                  })()}
                 </div>
                 <button
                   onClick={saveDefaultDate}
