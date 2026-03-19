@@ -9,7 +9,8 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  // 1. NT — room mapping
+  // ── 1. NT rates ──────────────────────────────────────────────────────────
+  // Get room mappings: hotel_id → option_desc
   const { data: mappings } = await supabase
     .from('hotel_tp_room_map')
     .select('hotel_id, option_desc') as any
@@ -17,14 +18,14 @@ export async function GET(req: NextRequest) {
   const mappingMap = new Map<string, string>()
   for (const m of (mappings ?? [])) mappingMap.set(m.hotel_id, m.option_desc)
 
-  // Hotels that have ANY nt rates in tp_rates (regardless of date)
-  const { data: allNtHotels } = await supabase
+  // Hotels that have ANY nt data in tp_rates (to distinguish no-data vs no-period)
+  const { data: allNtRows } = await supabase
     .from('tp_rates')
     .select('hotel_id')
     .not('hotel_id', 'is', null) as any
-  const hotelsWithNt = new Set((allNtHotels ?? []).map((r: any) => r.hotel_id))
+  const hotelsWithNtData = new Set((allNtRows ?? []).map((r: any) => r.hotel_id))
 
-  // NT rates for this specific date
+  // NT rates valid for this specific date
   const { data: ntRates } = await supabase
     .from('tp_rates')
     .select('hotel_id, option_desc, room_base, tp_net_rate')
@@ -32,6 +33,7 @@ export async function GET(req: NextRequest) {
     .gte('date_to', date)
     .not('hotel_id', 'is', null) as any
 
+  // Build NT map: hotel_id → { SGL, DBL, TPL } (only mapped option)
   const ntMap = new Map<string, Record<string, number>>()
   for (const row of (ntRates ?? [])) {
     const mappedOption = mappingMap.get(row.hotel_id)
@@ -40,53 +42,61 @@ export async function GET(req: NextRequest) {
     ntMap.get(row.hotel_id)![row.room_base] = row.tp_net_rate
   }
 
-  // 2. PC — dest+category combinations that have ANY data
-  const { data: allPcData } = await supabase
+  // ── 2. PC rates ──────────────────────────────────────────────────────────
+  // Dest+category combos that have ANY pc data
+  const { data: allPcRows } = await supabase
     .from('tp_pc_rates')
     .select('dest_code, category') as any
-  const destCatsWithPc = new Set((allPcData ?? []).map((r: any) => `${r.dest_code}__${r.category}`))
+  const destCatsWithPc = new Set((allPcRows ?? []).map((r: any) => `${r.dest_code}__${r.category}`))
 
-  // PC rates for this specific date
-  const { data: pcPeriods } = await supabase
+  // PC rates valid for this specific date
+  const { data: pcRates } = await supabase
     .from('tp_pc_rates')
     .select('dest_code, category, room_base, pc_rate')
     .lte('date_from', date)
     .gte('date_to', date) as any
 
+  // Build PC map: dest_code+category → { SGL, DBL, TPL }
   const pcMap = new Map<string, Record<string, number>>()
-  for (const row of (pcPeriods ?? [])) {
+  for (const row of (pcRates ?? [])) {
     const key = `${row.dest_code}__${row.category}`
     if (!pcMap.has(key)) pcMap.set(key, {})
     pcMap.get(key)![row.room_base] = row.pc_rate
   }
 
-  // 3. Get all hotels
+  // ── 3. Build result per hotel ────────────────────────────────────────────
   const { data: hotels } = await supabase
     .from('hotels')
     .select('id, category, destination_id, destinations(code)')
     .eq('active', true) as any
 
-  // 4. Build combined result
   const result = (hotels ?? []).map((hotel: any) => {
     const destCode = (hotel.destinations as any)?.code
     const pcKey = `${destCode}__${hotel.category}`
-    const pc = pcMap.get(pcKey) ?? {}
-    const nt = ntMap.get(hotel.id) ?? {}
-    const has_pc = destCatsWithPc.has(pcKey)
-    const has_nt = hotelsWithNt.has(hotel.id)
+    const hasMappingForNt = mappingMap.has(hotel.id)
+    const hasNtData = hotelsWithNtData.has(hotel.id) && hasMappingForNt
+    const hasPcData = destCatsWithPc.has(pcKey)
 
-    if (!has_pc && !has_nt) return null
+    // Skip hotels with no TP data at all
+    if (!hasNtData && !hasPcData) return null
+
+    const nt = ntMap.get(hotel.id) ?? {}
+    const pc = pcMap.get(pcKey) ?? {}
 
     return {
       hotel_id: hotel.id,
-      sgl_pc: pc['SGL'] ?? null,
-      dbl_pc: pc['DBL'] ?? null,
-      tpl_pc: pc['TPL'] ?? null,
+      // NT values — null means either no data or no period for this date
       sgl_nt: nt['SGL'] ?? null,
       dbl_nt: nt['DBL'] ?? null,
       tpl_nt: nt['TPL'] ?? null,
-      has_pc,
-      has_nt,
+      // PC values — null means either no data or no period for this date
+      sgl_pc: pc['SGL'] ?? null,
+      dbl_pc: pc['DBL'] ?? null,
+      tpl_pc: pc['TPL'] ?? null,
+      // Flags: true = has TP data but no rate for this specific date → show red dash
+      // false = no TP data at all → show grey dash
+      nt_has_data: hasNtData,
+      pc_has_data: hasPcData,
     }
   }).filter(Boolean)
 
