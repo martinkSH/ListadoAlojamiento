@@ -363,25 +363,40 @@ export default function HotelesPage() {
             />
             {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#a09080', fontSize: '13px', padding: 0 }}>✕</button>}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '10px', color: '#9a8d82', whiteSpace: 'nowrap' }}>Ver tarifas al:</span>
-            <div style={{ position: 'relative', display: 'inline-block' }}>
-              <input
-                type="date"
-                value={viewDate}
-                onChange={e => setViewDate(e.target.value)}
-                style={{ fontSize: '11px', padding: '4px 8px', border: '1px solid #ddd5cb', borderRadius: '6px', background: '#faf7f3', color: 'transparent', fontFamily: "'Inter','Helvetica Neue',system-ui,sans-serif", outline: 'none', width: '120px' }}
-              />
-              <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: '#2c2420', pointerEvents: 'none' }}>
-                {viewDate ? viewDate.split('-').reverse().join('/') : ''}
-              </span>
-            </div>
-            <button
-              onClick={() => setViewDate(new Date().toISOString().split('T')[0])}
-              style={{ fontSize: '10px', color: '#9a8d82', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
-            >Hoy</button>
-            {loadingRates && <span style={{ fontSize: '10px', color: '#b8a99a' }}>actualizando...</span>}
-          </div>
+          {(() => {
+            const [y, m, d] = viewDate ? viewDate.split('-') : ['2026', '05', '01']
+            const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+            const days = Array.from({length: 31}, (_: any, i: number) => i + 1)
+            const years = ['2026', '2027']
+            const selSx: React.CSSProperties = {
+              fontSize: '11px', padding: '4px 6px', border: '1px solid #ddd5cb',
+              borderRadius: '6px', background: '#faf7f3', color: '#2c2420',
+              fontFamily: "'Inter','Helvetica Neue',system-ui,sans-serif",
+              outline: 'none', cursor: 'pointer',
+            }
+            const updateDate = (newY: string, newM: string, newD: string) => {
+              if (newY && newM && newD) setViewDate(`${newY}-${newM.padStart(2,'0')}-${newD.padStart(2,'0')}`)
+            }
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '10px', color: '#9a8d82', whiteSpace: 'nowrap' }}>Ver tarifas al:</span>
+                <select value={d} onChange={e => updateDate(y, m, e.target.value)} style={selSx}>
+                  {days.map((day: number) => <option key={day} value={String(day).padStart(2,'0')}>{day}</option>)}
+                </select>
+                <select value={m} onChange={e => updateDate(y, e.target.value, d)} style={selSx}>
+                  {months.map((mn: string, i: number) => <option key={i+1} value={String(i+1).padStart(2,'0')}>{mn}</option>)}
+                </select>
+                <select value={y} onChange={e => updateDate(e.target.value, m, d)} style={selSx}>
+                  {years.map((yr: string) => <option key={yr} value={yr}>{yr}</option>)}
+                </select>
+                <button onClick={() => setViewDate(new Date().toISOString().split('T')[0])}
+                  style={{ fontSize: '10px', color: '#9a8d82', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}>
+                  Hoy
+                </button>
+                {loadingRates && <span style={{ fontSize: '10px', color: '#b8a99a' }}>actualizando...</span>}
+              </div>
+            )
+          })()}
           <div style={{ marginLeft: 'auto', fontSize: '11px', color: C.navMuted, fontWeight: 500 }}>
             {filteredDests.length} destinos · {totalHotels} hoteles
           </div>
