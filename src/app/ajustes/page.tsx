@@ -179,18 +179,27 @@ export default function AjustesPage() {
       const rows = Array.from(seen.values())
       setImportResult({ ok: true, msg: `Procesando ${rows.length} filas...` })
 
-      // Send JSON to server
-      const res = await fetch('/api/import-tarifario', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows })
-      })
-      const data = await res.json()
-      if (data.ok) {
-        setImportResult({ ok: true, msg: `✓ ${data.inserted} tarifas importadas` })
-      } else {
-        setImportResult({ ok: false, msg: data.error ?? 'Error al importar' })
+      // Send in batches of 2000 rows to avoid payload size limits
+      const BATCH = 2000
+      let totalInserted = 0
+      let isFirst = true
+      for (let i = 0; i < rows.length; i += BATCH) {
+        const batch = rows.slice(i, i + BATCH)
+        setImportResult({ ok: true, msg: `Enviando ${i + batch.length} / ${rows.length} filas...` })
+        const res = await fetch('/api/import-tarifario', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rows: batch, truncate: isFirst })
+        })
+        const data = await res.json()
+        if (!data.ok) {
+          setImportResult({ ok: false, msg: data.error ?? 'Error al importar' })
+          return
+        }
+        totalInserted += data.inserted
+        isFirst = false
       }
+      setImportResult({ ok: true, msg: `✓ ${totalInserted} tarifas importadas` })
     } catch (err: any) {
       setImportResult({ ok: false, msg: err.message })
     } finally {
