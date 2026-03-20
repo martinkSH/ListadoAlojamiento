@@ -10,9 +10,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
   const supabase = createAdminClient()
-
-  // Receive pre-processed rows from client (JSON, not file)
-  const { rows } = await req.json()
+  const { rows, truncate } = await req.json()
   if (!rows?.length) return NextResponse.json({ error: 'No rows' }, { status: 400 })
 
   // Get hotel lookup
@@ -21,8 +19,10 @@ export async function POST(req: NextRequest) {
   const hotelMap = new Map<string, string>()
   for (const h of (hotels ?? [])) hotelMap.set(String(h.tourplan_code).trim(), h.id)
 
-  // Delete existing
-  await supabase.from('tp_rates').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+  // Only truncate on first batch
+  if (truncate) {
+    await supabase.from('tp_rates').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+  }
 
   const now = new Date().toISOString()
   const toInsert = rows
@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
     const chunk = toInsert.slice(i, i + BATCH)
     const { error } = await supabase.from('tp_rates').insert(chunk)
     if (!error) inserted += chunk.length
+    else console.error('Insert error:', error.message)
   }
 
   return NextResponse.json({ ok: true, processed: rows.length, inserted, skipped: rows.length - inserted })
