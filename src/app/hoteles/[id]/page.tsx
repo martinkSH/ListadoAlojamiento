@@ -97,7 +97,7 @@ export default async function HotelDetailPage({ params, searchParams }: { params
             {hotel.tourplan_code && (
               <span style={{ fontSize:'10px', color:'#b8a99a', fontFamily:'monospace' }}>
                 TP #{hotel.tourplan_code}
-                {mappedOption && <span style={{ color:'#9a8d82' }}> · {mappedOption}</span>}
+                {mappedOption && <span style={{ color:'#9a8d82' }}> · {(hotel.hotel_tp_room_map as any)?.[0]?.option_code ?? mappedOption}</span>}
                 {!mappedOption && <span style={{ color:'#e57373' }}> · ⚠ sin mapeo</span>}
               </span>
             )}
