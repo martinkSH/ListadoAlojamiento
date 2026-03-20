@@ -165,13 +165,20 @@ export async function POST(req: Request) {
       }
     }
 
-    // Upsert tp_rates in batches
+    // Delete existing tp_rates for these hotels and reinsert fresh with option_code
+    // Get all hotel_ids we're about to sync
+    const hotelIdsToSync = Array.from(new Set(tpRatesRows.map((r: any) => r.hotel_id)))
+    const DELETE_BATCH = 100
+    for (let i = 0; i < hotelIdsToSync.length; i += DELETE_BATCH) {
+      const chunk = hotelIdsToSync.slice(i, i + DELETE_BATCH)
+      await supabase.from('tp_rates').delete().in('hotel_id', chunk)
+    }
+
+    // Insert fresh rows with option_code
     const RATE_BATCH = 500
     for (let i = 0; i < tpRatesRows.length; i += RATE_BATCH) {
       const chunk = tpRatesRows.slice(i, i + RATE_BATCH)
-      await supabase.from('tp_rates').upsert(chunk, {
-        onConflict: 'hotel_id,option_desc,room_base,date_from'
-      })
+      await supabase.from('tp_rates').insert(chunk)
       ntInserted += chunk.length
     }
 
