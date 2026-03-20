@@ -52,6 +52,8 @@ export default function AjustesPage() {
   const [userId, setUserId] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [defaultDate, setDefaultDate] = useState('')
   const [savingDate, setSavingDate] = useState(false)
   const [dateSaved, setDateSaved] = useState(false)
@@ -113,6 +115,29 @@ export default function AjustesPage() {
       setSyncResult({ ok: false, msg: `Error de red: ${e.message}` })
     }
     setSyncing(false)
+  }
+
+  async function handleImportTarifario(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImporting(true)
+    setImportResult(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/import-tarifario', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (data.ok) {
+        setImportResult({ ok: true, msg: `✓ ${data.inserted} tarifas importadas (${data.skipped} omitidas)` })
+      } else {
+        setImportResult({ ok: false, msg: data.error ?? 'Error al importar' })
+      }
+    } catch (err: any) {
+      setImportResult({ ok: false, msg: err.message })
+    } finally {
+      setImporting(false)
+      e.target.value = ''
+    }
   }
 
   async function loadCategories(id: string) {
