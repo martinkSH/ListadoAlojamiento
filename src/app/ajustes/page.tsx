@@ -123,12 +123,71 @@ export default function AjustesPage() {
     setImporting(true)
     setImportResult(null)
     try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const res = await fetch('/api/import-tarifario', { method: 'POST', body: fd })
+      // Parse Excel in browser first
+      const XLSX = await import('xlsx')
+      const buffer = await file.arrayBuffer()
+      const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true })
+      const ws = wb.Sheets['Product Tariff Room']
+      if (!ws) throw new Error('No se encontró la hoja "Product Tariff Room"')
+
+      const raw: any[] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
+      const headerIdx = raw.findIndex((r: any) => r && r.includes('supplierCode'))
+      if (headerIdx === -1) throw new Error('No se encontró la fila de encabezados')
+
+      const headers: string[] = raw[headerIdx]
+      const iSupplier = headers.indexOf('supplierCode')
+      const iOptCode = headers.indexOf('optionCode')
+      const iOptDesc = headers.indexOf('optionDescription')
+      const iServItem = headers.indexOf('servItem')
+      const iDateFrom = headers.indexOf('dateFrom')
+      const iDateTo = headers.indexOf('dateTo')
+      const iFitsCost = headers.indexOf('Fits Cost')
+
+      const ROOM_MAP: Record<string, string> = { Single: 'SGL', Double: 'DBL', Twin: 'DBL', Triple: 'TPL' }
+      const today = new Date(); today.setHours(0,0,0,0)
+
+      let lastSupplier = '', lastOptCode = '', lastOptDesc = ''
+      const seen = new Map<string, any>()
+
+      for (let i = headerIdx + 1; i < raw.length; i++) {
+        const r = raw[i]
+        if (!r) continue
+        if (r[iSupplier]) lastSupplier = String(r[iSupplier]).trim()
+        if (r[iOptCode]) lastOptCode = String(r[iOptCode]).trim()
+        if (r[iOptDesc]) lastOptDesc = String(r[iOptDesc]).trim()
+
+        const roomBase = ROOM_MAP[r[iServItem] ? String(r[iServItem]).trim() : '']
+        if (!roomBase) continue
+
+        const dateTo = r[iDateTo] instanceof Date ? r[iDateTo] : new Date(r[iDateTo])
+        const dateFrom = r[iDateFrom] instanceof Date ? r[iDateFrom] : new Date(r[iDateFrom])
+        if (!dateTo || dateTo < today) continue
+
+        const fitsCost = parseFloat(r[iFitsCost])
+        if (!fitsCost || fitsCost <= 0 || fitsCost >= 9000) continue
+        const supplierInt = parseInt(lastSupplier)
+        if (isNaN(supplierInt)) continue
+
+        const dateFromStr = dateFrom.toISOString().split('T')[0]
+        const dateToStr = dateTo.toISOString().split('T')[0]
+        const key = `${supplierInt}|${lastOptDesc}|${roomBase}|${dateFromStr}`
+        if (!seen.has(key) || fitsCost > seen.get(key).fitsCost) {
+          seen.set(key, { supplierCode: supplierInt, optionCode: lastOptCode, optionDesc: lastOptDesc, roomBase, fitsCost, dateFrom: dateFromStr, dateTo: dateToStr })
+        }
+      }
+
+      const rows = Array.from(seen.values())
+      setImportResult({ ok: true, msg: `Procesando ${rows.length} filas...` })
+
+      // Send JSON to server
+      const res = await fetch('/api/import-tarifario', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows })
+      })
       const data = await res.json()
       if (data.ok) {
-        setImportResult({ ok: true, msg: `✓ ${data.inserted} tarifas importadas (${data.skipped} omitidas)` })
+        setImportResult({ ok: true, msg: `✓ ${data.inserted} tarifas importadas` })
       } else {
         setImportResult({ ok: false, msg: data.error ?? 'Error al importar' })
       }
