@@ -80,6 +80,7 @@ export async function POST(req: Request) {
       const result = await pool.request().query(`
         SELECT
           OPT.SUPPLIER    AS supplierCode,
+          OPT.CODE        AS optionCode,
           OPT.DESCRIPTION AS optionDesc,
           OSR.DATE_FROM   AS dateFrom,
           OSR.DATE_TO     AS dateTo,
@@ -124,6 +125,7 @@ export async function POST(req: Request) {
           tpRatesRows.push({
             hotel_id: hotel.id,
             supplier_code: parseInt(supplierCode),
+            option_code: row.optionCode?.trim() ?? null,
             option_desc: row.optionDesc,
             room_base: 'SGL',
             tp_net_rate: row.sgl,
@@ -137,6 +139,7 @@ export async function POST(req: Request) {
           tpRatesRows.push({
             hotel_id: hotel.id,
             supplier_code: parseInt(supplierCode),
+            option_code: row.optionCode?.trim() ?? null,
             option_desc: row.optionDesc,
             room_base: 'DBL',
             tp_net_rate: row.dbl,
@@ -150,6 +153,7 @@ export async function POST(req: Request) {
           tpRatesRows.push({
             hotel_id: hotel.id,
             supplier_code: parseInt(supplierCode),
+            option_code: row.optionCode?.trim() ?? null,
             option_desc: row.optionDesc,
             room_base: 'TPL',
             tp_net_rate: row.tpl,
@@ -172,6 +176,27 @@ export async function POST(req: Request) {
     }
 
     console.log(`[sync] NT rows upserted: ${ntInserted}`)
+
+    // ── Step 4b: Update option_code in hotel_tp_room_map ────────────────────
+    // Build map: hotel_id + option_desc → option_code
+    const optCodeMap = new Map<string, string>()
+    for (const row of tpRatesRows) {
+      if (row.option_code) {
+        const key = `${row.hotel_id}__${row.option_desc}`
+        if (!optCodeMap.has(key)) optCodeMap.set(key, row.option_code)
+      }
+    }
+    // Update mappings with option_code
+    const { data: mappings2 } = await supabase
+      .from('hotel_tp_room_map').select('id, hotel_id, option_desc') as any
+    for (const m of (mappings2 ?? [])) {
+      const key = `${m.hotel_id}__${m.option_desc}`
+      const code = optCodeMap.get(key)
+      if (code) {
+        await supabase.from('hotel_tp_room_map')
+          .update({ option_code: code }).eq('id', m.id)
+      }
+    }
 
     // ── Step 5: Fetch PC rates (supplier 1743) ─────────────────────────────
     const PC_SUPPLIER = '1743'
