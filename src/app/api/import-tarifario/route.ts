@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import * as XLSX from 'xlsx'
+// xlsx loaded dynamically
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
   if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 })
 
   const buffer = Buffer.from(await file.arrayBuffer())
+  const XLSX = require('xlsx')
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true })
   const ws = wb.Sheets['Product Tariff Room']
   if (!ws) return NextResponse.json({ error: 'Sheet "Product Tariff Room" not found' }, { status: 400 })
