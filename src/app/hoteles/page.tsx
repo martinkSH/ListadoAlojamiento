@@ -26,7 +26,7 @@ type Hotel = {
   destination_id: string
   hotel_tags: HotelTag[]
   tourplan_code: string | null
-  hotel_tp_room_map: { option_desc: string }[]
+  hotel_tp_room_map: { option_desc: string; option_code: string | null }[]
 }
 
 type Destination = { id: string; code: string; name: string; country: string }
@@ -139,8 +139,10 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate, dateRate }: {
               {hotel.tourplan_code && (
                 <span style={{ marginLeft: '5px', fontSize: '9px', color: '#b8a99a', fontFamily: 'monospace' }}>
                   #{hotel.tourplan_code}
-                  {hotel.hotel_tp_room_map?.[0]?.option_desc && (
-                    <span style={{ color: '#c4b8ad', fontFamily: 'inherit' }}> · {hotel.hotel_tp_room_map[0].option_desc}</span>
+                  {hotel.hotel_tp_room_map?.[0] && (
+                    <span style={{ color: '#c4b8ad', fontFamily: 'monospace' }}>
+                      {' · '}{hotel.hotel_tp_room_map[0].option_code ?? hotel.hotel_tp_room_map[0].option_desc}
+                    </span>
                   )}
                 </span>
               )}
