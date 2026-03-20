@@ -25,9 +25,9 @@ export async function POST(req: NextRequest) {
   if (!missing?.length) return NextResponse.json({ ok: true, updated: 0 })
 
   // Get unique supplier codes
-  const supplierCodes = [...new Set(
+  const supplierCodes = Array.from(new Set(
     missing.map((m: any) => (m.hotels as any)?.tourplan_code?.trim()).filter(Boolean)
-  )] as string[]
+  )) as string[]
 
   const pool = await sql.connect(config)
   let updated = 0
