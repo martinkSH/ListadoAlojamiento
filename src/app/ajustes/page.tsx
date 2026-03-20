@@ -390,7 +390,37 @@ export default function AjustesPage() {
               </div>
             </div>
 
-            {/* Fecha default del listado */}
+            {/* Import tarifario */}
+            <div style={{ background: C.card, border: `0.5px solid ${C.cardBorder}`, borderRadius: '10px', marginBottom: '16px', overflow: 'hidden' }}>
+              <div style={{ padding: '9px 16px', borderBottom: `0.5px solid ${C.cardBorder}`, background: C.cardHead, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>Importar Tarifario TourPlan</span>
+                <span style={{ fontSize: '9px', color: C.label }}>Reemplaza todas las tarifas NT actuales</span>
+              </div>
+              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' as const }}>
+                <label style={{
+                  padding: '8px 20px', fontSize: '12px', fontWeight: 600, fontFamily: font,
+                  background: importing ? '#a09080' : '#4a7a4a', color: '#fff',
+                  borderRadius: '7px', cursor: importing ? 'not-allowed' : 'pointer',
+                  display: 'inline-block', userSelect: 'none' as const,
+                }}>
+                  {importing ? 'Procesando...' : '↑ Subir tarifario (.xlsm)'}
+                  <input type="file" accept=".xlsm,.xlsx" onChange={handleImportTarifario}
+                    disabled={importing} style={{ display: 'none' }} />
+                </label>
+                {importResult && (
+                  <div style={{
+                    fontSize: '12px', padding: '6px 12px', borderRadius: '6px',
+                    background: importResult.ok ? C.successBg : C.errorBg,
+                    color: importResult.ok ? C.success : C.error,
+                    border: `1px solid ${importResult.ok ? C.successBorder : C.errorBorder}`,
+                  }}>
+                    {importResult.msg}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Fecha default del listado */}}
             <div style={{ background: C.card, border: `0.5px solid ${C.cardBorder}`, borderRadius: '10px', marginBottom: '16px', overflow: 'hidden' }}>
               <div style={{ padding: '9px 16px', borderBottom: `0.5px solid ${C.cardBorder}`, background: C.cardHead }}>
                 <span style={{ fontSize: '10px', fontWeight: 700, color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>Fecha default del listado</span>
