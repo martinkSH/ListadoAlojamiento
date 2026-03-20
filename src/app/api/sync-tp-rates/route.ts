@@ -177,8 +177,8 @@ export async function POST(req: Request) {
 
     console.log(`[sync] NT rows upserted: ${ntInserted}`)
 
-    // ── Step 4b: Update option_code in hotel_tp_room_map ────────────────────
-    // Build map: hotel_id + option_desc → option_code
+    // ── Step 4b: Update option_code in hotel_tp_room_map AND tp_rates ────────
+    // Build map: hotel_id + option_desc → option_code (from TP data)
     const optCodeMap = new Map<string, string>()
     for (const row of tpRatesRows) {
       if (row.option_code) {
@@ -186,7 +186,8 @@ export async function POST(req: Request) {
         if (!optCodeMap.has(key)) optCodeMap.set(key, row.option_code)
       }
     }
-    // Update mappings with option_code
+
+    // Update hotel_tp_room_map with option_code
     const { data: mappings2 } = await supabase
       .from('hotel_tp_room_map').select('id, hotel_id, option_desc') as any
     for (const m of (mappings2 ?? [])) {
@@ -195,6 +196,29 @@ export async function POST(req: Request) {
       if (code) {
         await supabase.from('hotel_tp_room_map')
           .update({ option_code: code }).eq('id', m.id)
+      }
+    }
+
+    // Update tp_rates option_code for existing null rows using TP data
+    // Build map: hotel_id + option_desc → option_code
+    const hotelDescToCode = new Map<string, string>()
+    for (const row of tpRatesRows) {
+      if (row.option_code && row.hotel_id && row.option_desc) {
+        const key = `${row.hotel_id}|||${row.option_desc}`
+        if (!hotelDescToCode.has(key)) hotelDescToCode.set(key, row.option_code)
+      }
+    }
+    // Update tp_rates rows that still have null option_code
+    const { data: nullRates } = await supabase
+      .from('tp_rates')
+      .select('id, hotel_id, option_desc')
+      .is('option_code', null)
+      .not('hotel_id', 'is', null) as any
+    for (const r of (nullRates ?? [])) {
+      const key = `${r.hotel_id}|||${r.option_desc}`
+      const code = hotelDescToCode.get(key)
+      if (code) {
+        await supabase.from('tp_rates').update({ option_code: code }).eq('id', r.id)
       }
     }
 
