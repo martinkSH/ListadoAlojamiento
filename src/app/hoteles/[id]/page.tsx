@@ -94,6 +94,13 @@ export default async function HotelDetailPage({ params, searchParams }: { params
             {hotel.is_family && <span style={{ fontSize:'10px', color:'#92600a', background:'#fef3c7', padding:'1px 6px', borderRadius:'4px', fontWeight:500 }}>FAM</span>}
             {!hotel.is_direct && <span style={{ fontSize:'10px', color:'#6d28d9', background:'#ede9fe', padding:'1px 6px', borderRadius:'4px', fontWeight:500 }}>PLT{hotel.platform_name ? ` · ${hotel.platform_name}` : ''}</span>}
             {isExpired && <span style={{ fontSize:'10px', color:'#b91c1c', background:'#fee2e2', padding:'1px 6px', borderRadius:'4px', fontWeight:500 }}>NT vencida</span>}
+            {hotel.tourplan_code && (
+              <span style={{ fontSize:'10px', color:'#b8a99a', fontFamily:'monospace' }}>
+                TP #{hotel.tourplan_code}
+                {mappedOption && <span style={{ color:'#9a8d82' }}> · {mappedOption}</span>}
+                {!mappedOption && <span style={{ color:'#e57373' }}> · ⚠ sin mapeo</span>}
+              </span>
+            )}
           </div>
         </div>
 
