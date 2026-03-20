@@ -16,7 +16,7 @@ export default async function HotelDetailPage({ params, searchParams }: { params
 
   const { data: hotel } = await supabase
     .from('hotels')
-    .select('*, destinations(id,code,name,country), rates(id,room_base,pc_rate,net_rate,season), promotions(id,title,description,promo_type,discount_pct,free_nights,valid_from,valid_until,book_by,conditions,active), tp_rates(id,option_desc,option_comment,room_base,tp_net_rate,date_from,date_to,synced_at), hotel_tp_room_map(option_desc)')
+    .select('*, destinations(id,code,name,country), rates(id,room_base,pc_rate,net_rate,season), promotions(id,title,description,promo_type,discount_pct,free_nights,valid_from,valid_until,book_by,conditions,active), tp_rates(id,option_desc,option_comment,room_base,tp_net_rate,date_from,date_to,synced_at), hotel_tp_room_map(option_desc,option_code)')
     .eq('id', params.id)
     .single() as any
 
