@@ -420,7 +420,7 @@ export default function AjustesPage() {
               </div>
             </div>
 
-            {/* Fecha default del listado */}}
+            {/* Fecha default del listado */}
             <div style={{ background: C.card, border: `0.5px solid ${C.cardBorder}`, borderRadius: '10px', marginBottom: '16px', overflow: 'hidden' }}>
               <div style={{ padding: '9px 16px', borderBottom: `0.5px solid ${C.cardBorder}`, background: C.cardHead }}>
                 <span style={{ fontSize: '10px', fontWeight: 700, color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>Fecha default del listado</span>
