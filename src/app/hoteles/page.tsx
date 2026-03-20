@@ -26,6 +26,7 @@ type Hotel = {
   destination_id: string
   hotel_tags: HotelTag[]
   tourplan_code: string | null
+  hotel_tp_room_map: { option_desc: string }[]
 }
 
 type Destination = { id: string; code: string; name: string; country: string }
@@ -135,7 +136,14 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate, dateRate }: {
               {hotel.tourplan_code && !dateRate && (
                 <span style={{ marginLeft: '4px', fontSize: '9px', color: '#f59e0b', fontWeight: 700 }} title="Sin mapeo de habitación">⚠</span>
               )}
-              {hotel.tourplan_code && <span style={{ marginLeft: '5px', fontSize: '9px', color: '#b8a99a', fontFamily: 'monospace' }}>#{hotel.tourplan_code}</span>}
+              {hotel.tourplan_code && (
+                <span style={{ marginLeft: '5px', fontSize: '9px', color: '#b8a99a', fontFamily: 'monospace' }}>
+                  #{hotel.tourplan_code}
+                  {hotel.hotel_tp_room_map?.[0]?.option_desc && (
+                    <span style={{ color: '#c4b8ad', fontFamily: 'inherit' }}> · {hotel.hotel_tp_room_map[0].option_desc}</span>
+                  )}
+                </span>
+              )}
               <HotelTagBadges tags={hotel.hotel_tags ?? []} />
               {!hotel.is_direct && <span style={{ marginLeft: '5px', fontSize: '9px', color: '#3d1580', background: '#d5ccf5', padding: '0 5px', borderRadius: '3px', fontWeight: 600 }}>PLT</span>}
             </div>
@@ -246,7 +254,7 @@ export default function HotelesPage() {
 
     const { data: h } = await supabase
       .from('hotels')
-      .select('id,name,category,priority,distance_center,is_direct,destination_id,tourplan_code,hotel_tags(id,tag_type,tag_value,tag_link)')
+      .select('id,name,category,priority,distance_center,is_direct,destination_id,tourplan_code,hotel_tags(id,tag_type,tag_value,tag_link),hotel_tp_room_map(option_desc)')
       .eq('active', true).in('destination_id', destIds).order('priority')
     setHotels((h ?? []) as Hotel[])
     setLoading(false)
