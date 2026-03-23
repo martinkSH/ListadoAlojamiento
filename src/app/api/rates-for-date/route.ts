@@ -9,48 +9,56 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  // ── 1. Room mappings: hotel_id → option_desc (always use desc for matching) ──
+  // ── 1. Room mappings ─────────────────────────────────────────────────────
   const { data: mappings } = await supabase
     .from('hotel_tp_room_map')
-    .select('hotel_id, option_desc') as any
+    .select('hotel_id, option_code, option_desc') as any
 
-  // Normalize: trim + remove accents for robust matching
-  const norm = (s: string) => s.trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  const norm = (s: string) => s?.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() ?? ''
 
-  const mappingMap = new Map<string, string>() // hotel_id → normalized option_desc
+  // hotel_id → { code, desc }
+  const mappingMap = new Map<string, { code: string | null; desc: string }>()
   for (const m of (mappings ?? [])) {
-    if (m.option_desc) mappingMap.set(m.hotel_id, norm(m.option_desc))
+    if (m.option_desc) mappingMap.set(m.hotel_id, {
+      code: m.option_code?.trim() ?? null,
+      desc: norm(m.option_desc)
+    })
   }
 
-  // ── 2. Hotels that have ANY data in tp_rates ─────────────────────────────
+  // ── 2. Hotels with ANY nt data ───────────────────────────────────────────
   const { data: allNtRows } = await supabase
-    .from('tp_rates')
-    .select('hotel_id')
-    .not('hotel_id', 'is', null) as any
+    .from('tp_rates').select('hotel_id').not('hotel_id', 'is', null) as any
   const hotelsWithNtData = new Set((allNtRows ?? []).map((r: any) => r.hotel_id))
 
   // ── 3. NT rates for this date ────────────────────────────────────────────
   const { data: ntRates } = await supabase
     .from('tp_rates')
-    .select('hotel_id, option_desc, room_base, tp_net_rate')
+    .select('hotel_id, option_code, option_desc, room_base, tp_net_rate')
     .lte('date_from', date)
     .gte('date_to', date)
     .not('hotel_id', 'is', null) as any
 
-  // Match strictly by option_desc (trim both sides to avoid whitespace issues)
+  // Match: option_code if both sides have it, else option_desc normalized
   const ntMap = new Map<string, Record<string, number>>()
   for (const row of (ntRates ?? [])) {
-    const mappedDesc = mappingMap.get(row.hotel_id)
-    if (!mappedDesc) continue
-    if (norm(row.option_desc ?? '') !== mappedDesc) continue
+    const mapping = mappingMap.get(row.hotel_id)
+    if (!mapping) continue
+
+    const rowCode = row.option_code?.trim()
+    const rowDesc = norm(row.option_desc ?? '')
+
+    const isMatch = (mapping.code && rowCode)
+      ? mapping.code === rowCode
+      : rowDesc === mapping.desc
+
+    if (!isMatch) continue
     if (!ntMap.has(row.hotel_id)) ntMap.set(row.hotel_id, {})
     ntMap.get(row.hotel_id)![row.room_base] = row.tp_net_rate
   }
 
-  // ── 4. PC rates for this date ────────────────────────────────────────────
+  // ── 4. PC rates ──────────────────────────────────────────────────────────
   const { data: allPcRows } = await supabase
-    .from('tp_pc_rates')
-    .select('dest_code, category') as any
+    .from('tp_pc_rates').select('dest_code, category') as any
   const destCatsWithPc = new Set((allPcRows ?? []).map((r: any) => `${r.dest_code}__${r.category}`))
 
   const { data: pcRates } = await supabase
