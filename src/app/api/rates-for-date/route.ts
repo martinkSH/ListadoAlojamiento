@@ -7,8 +7,9 @@ export async function GET(req: NextRequest) {
 
   console.log('[DEBUG] Searching for date:', date, 'type:', typeof date)
 
+  // Use regular client for auth
   const supabase = createClient()
-  const { data: { user } } = await adminSupabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
   // Use admin client for data queries (no pagination limits)
