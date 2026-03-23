@@ -141,7 +141,25 @@ export default function AjustesPage() {
       const iServItem = headers.indexOf('servItem')
       const iDateFrom = headers.indexOf('dateFrom')
       const iDateTo = headers.indexOf('dateTo')
-      const iFitsCost = headers.indexOf('Fits Cost')
+      
+      // Buscar columna de costo - puede ser 'Fits Cost' o 'Fits Sell'
+      let iFitsCost = headers.indexOf('Fits Cost')
+      if (iFitsCost === -1) {
+        iFitsCost = headers.indexOf('Fits Sell')
+      }
+      
+      if (iFitsCost === -1) {
+        throw new Error('No se encontró columna de costo (Fits Cost o Fits Sell)')
+      }
+      
+      console.log('[IMPORT] Columnas encontradas:')
+      console.log('  - supplierCode:', iSupplier !== -1 ? '✓' : '✗')
+      console.log('  - optionCode:', iOptCode !== -1 ? '✓' : '✗')
+      console.log('  - optionDescription:', iOptDesc !== -1 ? '✓' : '✗')
+      console.log('  - servItem:', iServItem !== -1 ? '✓' : '✗')
+      console.log('  - dateFrom:', iDateFrom !== -1 ? '✓' : '✗')
+      console.log('  - dateTo:', iDateTo !== -1 ? '✓' : '✗')
+      console.log('  - Costo (columna):', headers[iFitsCost])
 
       const ROOM_MAP: Record<string, string> = { Single: 'SGL', Double: 'DBL', Twin: 'DBL', Triple: 'TPL' }
       const today = new Date(); today.setHours(0,0,0,0)
@@ -177,6 +195,11 @@ export default function AjustesPage() {
       }
 
       const rows = Array.from(seen.values())
+      console.log('[IMPORT] Procesamiento completado:')
+      console.log('  - Filas en Excel:', raw.length - headerIdx - 1)
+      console.log('  - Filas únicas procesadas:', rows.length)
+      console.log('  - Suppliers únicos:', new Set(rows.map(r => r.supplierCode)).size)
+      
       setImportResult({ ok: true, msg: `Procesando ${rows.length} filas...` })
 
       // Send in batches of 2000 rows to avoid payload size limits
