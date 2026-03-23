@@ -105,13 +105,13 @@ export async function GET(req: NextRequest) {
   
   // Build EXPIRED rates map: "supplierCode__optionCode" → { SGL, DBL, TPL } from last available rates
   const expiredNtMap = new Map<string, Record<string, number>>()
-  for (const [key, row] of lastRatesMap.entries()) {
+  lastRatesMap.forEach((row, key) => {
     // Only include if date_to is BEFORE the requested date (expired)
     if (row.date_to < date) {
       if (!expiredNtMap.has(key)) expiredNtMap.set(key, {})
       expiredNtMap.get(key)![row.room_base] = row.tp_net_rate
     }
-  }
+  })
   
   console.log('[DEBUG] Expired rates map size:', expiredNtMap.size)
   
