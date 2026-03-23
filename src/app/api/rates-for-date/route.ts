@@ -110,11 +110,11 @@ export async function GET(req: NextRequest) {
   console.log('[DEBUG] allSuppliersWithData has 526:', allSuppliersWithData.has('526'))
 
   // ── 3. PC rates ───────────────────────────────────────────────────────────
-  const { data: allPcRows } = await adminSupabase
+  const { data: allPcRows } = await supabase
     .from('tp_pc_rates').select('dest_code, category').limit(10000) as any
   const destCatsWithPc = new Set((allPcRows ?? []).map((r: any) => `${r.dest_code}__${r.category}`))
 
-  const { data: pcRates } = await adminSupabase
+  const { data: pcRates } = await supabase
     .from('tp_pc_rates')
     .select('dest_code, category, room_base, pc_rate')
     .lte('date_from', date)
@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 4. Hotels ─────────────────────────────────────────────────────────────
-  const { data: hotels } = await adminSupabase
+  const { data: hotels } = await supabase
     .from('hotels')
     .select('id, category, tourplan_code, destination_id, destinations(code)')
     .eq('active', true)
