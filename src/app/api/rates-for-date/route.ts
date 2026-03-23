@@ -60,12 +60,28 @@ export async function GET(req: NextRequest) {
 
   console.log('[DEBUG] Total ntRates fetched:', ntRatesRaw.length)
 
-  // Filter in memory for the specific date (more reliable than Supabase date filters)
+  // Filter for CURRENT rates (valid for the date)
   const ntRates = (ntRatesRaw ?? []).filter((row: any) => {
     return row.date_from <= date && row.date_to >= date
   })
 
   console.log('[DEBUG] After date filter:', ntRates.length, 'rates')
+  
+  // Also get LAST AVAILABLE rates (even if expired) - for each supplier+option, get the most recent
+  const lastRatesMap = new Map<string, any>()
+  for (const row of ntRatesRaw) {
+    const keyByCode = `${String(row.supplier_code).trim()}__${String(row.option_code || '').trim()}`
+    const keyByDesc = `${String(row.supplier_code).trim()}__${String(row.option_desc || '').trim()}`
+    
+    // Keep the rate with the latest date_to
+    for (const key of [keyByCode, keyByDesc]) {
+      if (!lastRatesMap.has(key) || row.date_to > lastRatesMap.get(key).date_to) {
+        lastRatesMap.set(key, row)
+      }
+    }
+  }
+  
+  console.log('[DEBUG] Last rates map size:', lastRatesMap.size)
 
   // DEBUG: Log para supplier 526
   const debug526 = (ntRates ?? []).filter((r: any) => String(r.supplier_code) === '526')
@@ -86,6 +102,18 @@ export async function GET(req: NextRequest) {
     if (!ntMap.has(key)) ntMap.set(key, {})
     ntMap.get(key)![row.room_base] = row.tp_net_rate
   }
+  
+  // Build EXPIRED rates map: "supplierCode__optionCode" → { SGL, DBL, TPL } from last available rates
+  const expiredNtMap = new Map<string, Record<string, number>>()
+  for (const [key, row] of lastRatesMap.entries()) {
+    // Only include if date_to is BEFORE the requested date (expired)
+    if (row.date_to < date) {
+      if (!expiredNtMap.has(key)) expiredNtMap.set(key, {})
+      expiredNtMap.get(key)![row.room_base] = row.tp_net_rate
+    }
+  }
+  
+  console.log('[DEBUG] Expired rates map size:', expiredNtMap.size)
   
   // DEBUG: Verificar si 526 está en los sets
   console.log('[DEBUG] suppliersWithDataForDate has 526?', suppliersWithDataForDate.has('526'))
@@ -160,16 +188,29 @@ export async function GET(req: NextRequest) {
 
     // Look up NT rates for this date
     let nt: Record<string, number> = {}
+    let ntExpired: Record<string, number> = {}
+    let hasExpiredRates = false
+    
     if (hasMapping && tpCode) {
+      // First try current rates
       const byCode = mapping!.code ? ntMap.get(`${tpCode}__${mapping!.code}`) : undefined
       const byDesc = mapping!.desc ? ntMap.get(`${tpCode}__${mapping!.desc}`) : undefined
       nt = byCode ?? byDesc ?? {}
+      
+      // If no current rates, try expired rates
+      if (Object.keys(nt).length === 0) {
+        const expiredByCode = mapping!.code ? expiredNtMap.get(`${tpCode}__${mapping!.code}`) : undefined
+        const expiredByDesc = mapping!.desc ? expiredNtMap.get(`${tpCode}__${mapping!.desc}`) : undefined
+        ntExpired = expiredByCode ?? expiredByDesc ?? {}
+        hasExpiredRates = Object.keys(ntExpired).length > 0
+      }
       
       // DEBUG: Log búsqueda para Design Suites
       if (hotel.id === '4f36157a-5de6-560c-82c5-a0e1834fb75e') {
         console.log('  Searching byCode:', `${tpCode}__${mapping!.code}`, '→', byCode)
         console.log('  Searching byDesc:', `${tpCode}__${mapping!.desc}`, '→', byDesc)
         console.log('  Final nt:', nt)
+        console.log('  Expired nt:', ntExpired, 'hasExpired:', hasExpiredRates)
       }
     }
 
@@ -177,14 +218,15 @@ export async function GET(req: NextRequest) {
 
     return {
       hotel_id: hotel.id,
-      sgl_nt: nt['SGL'] ?? null,
-      dbl_nt: nt['DBL'] ?? null,
-      tpl_nt: nt['TPL'] ?? null,
+      sgl_nt: nt['SGL'] ?? ntExpired['SGL'] ?? null,
+      dbl_nt: nt['DBL'] ?? ntExpired['DBL'] ?? null,
+      tpl_nt: nt['TPL'] ?? ntExpired['TPL'] ?? null,
       sgl_pc: pc['SGL'] ?? null,
       dbl_pc: pc['DBL'] ?? null,
       tpl_pc: pc['TPL'] ?? null,
       nt_has_data: hasNtData,
       pc_has_data: hasPcData,
+      nt_is_expired: hasExpiredRates, // Flag para mostrar "(vencida)" en el frontend
     }
   }).filter(Boolean)
 
