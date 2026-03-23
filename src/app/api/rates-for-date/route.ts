@@ -7,17 +7,12 @@ export async function GET(req: NextRequest) {
 
   console.log('[DEBUG] Searching for date:', date, 'type:', typeof date)
 
-  // Use regular client for auth
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  // Use admin client for data queries (no pagination limits)
-  const { createAdminClient } = await import('@/lib/supabase/server')
-  const adminSupabase = createAdminClient()
-
   // ── 1. Mappings: hotel_id → { option_code, option_desc } ─────────────────
-  const { data: mappings } = await adminSupabase
+  const { data: mappings } = await supabase
     .from('hotel_tp_room_map')
     .select('hotel_id, option_code, option_desc')
     .limit(10000) as any
@@ -38,13 +33,32 @@ export async function GET(req: NextRequest) {
   // We'll populate this from hotels below
 
   // ── 2. NT rates for this date ─────────────────────────────────────────────
-  // FIXED: Increase limit to fetch all rows (21,260 total in DB)
-  const { data: ntRatesRaw } = await adminSupabase
-    .from('tp_rates')
-    .select('supplier_code, option_code, option_desc, room_base, tp_net_rate, date_from, date_to')
-    .limit(25000) as any  // Increased from default 1000 to 25000
+  // FIXED: Fetch ALL rows using pagination (Supabase limits to 1000 per request)
+  let ntRatesRaw: any[] = []
+  let page = 0
+  const pageSize = 1000
+  
+  while (true) {
+    const { data, error } = await supabase
+      .from('tp_rates')
+      .select('supplier_code, option_code, option_desc, room_base, tp_net_rate, date_from, date_to')
+      .range(page * pageSize, (page + 1) * pageSize - 1)
+    
+    if (error) {
+      console.error('[DEBUG] Error fetching page', page, error)
+      break
+    }
+    
+    if (!data || data.length === 0) break
+    
+    ntRatesRaw = ntRatesRaw.concat(data)
+    console.log('[DEBUG] Fetched page', page, ':', data.length, 'rows. Total so far:', ntRatesRaw.length)
+    
+    if (data.length < pageSize) break // Last page
+    page++
+  }
 
-  console.log('[DEBUG] Total ntRates fetched:', (ntRatesRaw ?? []).length)
+  console.log('[DEBUG] Total ntRates fetched:', ntRatesRaw.length)
 
   // Filter in memory for the specific date (more reliable than Supabase date filters)
   const ntRates = (ntRatesRaw ?? []).filter((row: any) => {
