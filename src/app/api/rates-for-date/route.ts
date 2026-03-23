@@ -8,11 +8,15 @@ export async function GET(req: NextRequest) {
   console.log('[DEBUG] Searching for date:', date, 'type:', typeof date)
 
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { user } } = await adminSupabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
+  // Use admin client for data queries (no pagination limits)
+  const { createAdminClient } = await import('@/lib/supabase/server')
+  const adminSupabase = createAdminClient()
+
   // ── 1. Mappings: hotel_id → { option_code, option_desc } ─────────────────
-  const { data: mappings } = await supabase
+  const { data: mappings } = await adminSupabase
     .from('hotel_tp_room_map')
     .select('hotel_id, option_code, option_desc')
     .limit(10000) as any
@@ -33,11 +37,11 @@ export async function GET(req: NextRequest) {
   // We'll populate this from hotels below
 
   // ── 2. NT rates for this date ─────────────────────────────────────────────
-  // FIXED: Use filter() instead of lte/gte for better date handling
-  const { data: ntRatesRaw } = await supabase
+  // FIXED: Increase limit to fetch all rows (21,260 total in DB)
+  const { data: ntRatesRaw } = await adminSupabase
     .from('tp_rates')
     .select('supplier_code, option_code, option_desc, room_base, tp_net_rate, date_from, date_to')
-    .limit(50000) as any
+    .limit(25000) as any  // Increased from default 1000 to 25000
 
   console.log('[DEBUG] Total ntRates fetched:', (ntRatesRaw ?? []).length)
 
@@ -78,7 +82,7 @@ export async function GET(req: NextRequest) {
   const allSuppliersWithData = new Set<string>(suppliersWithDataForDate)
   
   // Query for additional suppliers not in current date range (in batches to avoid limit issues)
-  const { data: additionalSuppliers } = await supabase
+  const { data: additionalSuppliers } = await adminSupabase
     .from('tp_rates')
     .select('supplier_code')
     .limit(1000) as any
@@ -91,11 +95,11 @@ export async function GET(req: NextRequest) {
   console.log('[DEBUG] allSuppliersWithData has 526:', allSuppliersWithData.has('526'))
 
   // ── 3. PC rates ───────────────────────────────────────────────────────────
-  const { data: allPcRows } = await supabase
+  const { data: allPcRows } = await adminSupabase
     .from('tp_pc_rates').select('dest_code, category').limit(10000) as any
   const destCatsWithPc = new Set((allPcRows ?? []).map((r: any) => `${r.dest_code}__${r.category}`))
 
-  const { data: pcRates } = await supabase
+  const { data: pcRates } = await adminSupabase
     .from('tp_pc_rates')
     .select('dest_code, category, room_base, pc_rate')
     .lte('date_from', date)
@@ -110,7 +114,7 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 4. Hotels ─────────────────────────────────────────────────────────────
-  const { data: hotels } = await supabase
+  const { data: hotels } = await adminSupabase
     .from('hotels')
     .select('id, category, tourplan_code, destination_id, destinations(code)')
     .eq('active', true)
