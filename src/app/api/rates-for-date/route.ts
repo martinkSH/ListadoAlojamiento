@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  // ── 1. Mappings: hotel_id → option_code ──────────────────────────────────
+  // ── 1. Mappings: hotel_id → { option_code, option_desc } ─────────────────
   const { data: mappings } = await supabase
     .from('hotel_tp_room_map')
     .select('hotel_id, option_code, option_desc')
@@ -25,8 +25,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── 2. NT rates for this date — match by supplier_code + option_code ─────
-  // supplier_code in tp_rates = tourplan_code in hotels
+  // Also build: tourplan_code → hotel_id (for hasNtData check)
+  // We need to know which tourplan_codes have mapped hotels
+  const mappedTpCodes = new Set<string>()
+  // We'll populate this from hotels below
+
+  // ── 2. NT rates for this date ─────────────────────────────────────────────
   const { data: ntRates } = await supabase
     .from('tp_rates')
     .select('supplier_code, option_code, option_desc, room_base, tp_net_rate')
@@ -34,20 +38,26 @@ export async function GET(req: NextRequest) {
     .gte('date_to', date)
     .limit(50000) as any
 
-  // Build NT lookup: supplier_code + option_code → { SGL, DBL, TPL }
-  const ntBySupplier = new Map<string, Record<string, number>>()
+  // Build: "supplierCode__optionCode" → { SGL, DBL, TPL }
+  // Also track which suppliers have data FOR THIS DATE
+  const ntMap = new Map<string, Record<string, number>>()
+  const suppliersWithDataForDate = new Set<string>()
   for (const row of (ntRates ?? [])) {
-    const key = `${String(row.supplier_code)}__${row.option_code ?? row.option_desc}`
-    if (!ntBySupplier.has(key)) ntBySupplier.set(key, {})
-    ntBySupplier.get(key)![row.room_base] = row.tp_net_rate
+    const sc = String(row.supplier_code)
+    suppliersWithDataForDate.add(sc)
+    const optKey = row.option_code?.trim() ?? row.option_desc?.trim()
+    const key = `${sc}__${optKey}`
+    if (!ntMap.has(key)) ntMap.set(key, {})
+    ntMap.get(key)![row.room_base] = row.tp_net_rate
   }
 
-  // Which supplier_codes have ANY data in tp_rates
-  const { data: allNtSuppliers } = await supabase
+  // Also get ALL suppliers that have any tp_rates (not just for this date)
+  // to show red dash vs grey dash
+  const { data: allNtRows } = await supabase
     .from('tp_rates')
     .select('supplier_code')
     .limit(50000) as any
-  const suppliersWithData = new Set((allNtSuppliers ?? []).map((r: any) => String(r.supplier_code)))
+  const allSuppliersWithData = new Set((allNtRows ?? []).map((r: any) => String(r.supplier_code)))
 
   // ── 3. PC rates ───────────────────────────────────────────────────────────
   const { data: allPcRows } = await supabase
@@ -81,18 +91,19 @@ export async function GET(req: NextRequest) {
     const tpCode = hotel.tourplan_code?.trim()
     const mapping = mappingByHotel.get(hotel.id)
 
-    const hasMapping = !!mapping
-    const hasNtData = hasMapping && tpCode && suppliersWithData.has(tpCode)
+    const hasMapping = !!mapping && !!tpCode
+    // nt_has_data = hotel has a mapping AND supplier has ANY data in tp_rates
+    const hasNtData = hasMapping && allSuppliersWithData.has(tpCode)
     const hasPcData = destCatsWithPc.has(pcKey)
 
     if (!hasNtData && !hasPcData) return null
 
-    // Find NT rates: match by supplier_code + option_code (or option_desc fallback)
+    // Look up NT rates for this date
     let nt: Record<string, number> = {}
-    if (hasNtData && mapping) {
-      const keyByCode = `${tpCode}__${mapping.code}`
-      const keyByDesc = `${tpCode}__${mapping.desc}`
-      nt = ntBySupplier.get(keyByCode) ?? ntBySupplier.get(keyByDesc) ?? {}
+    if (hasMapping && tpCode) {
+      const byCode = mapping!.code ? ntMap.get(`${tpCode}__${mapping!.code}`) : undefined
+      const byDesc = mapping!.desc ? ntMap.get(`${tpCode}__${mapping!.desc}`) : undefined
+      nt = byCode ?? byDesc ?? {}
     }
 
     const pc = pcMap.get(pcKey) ?? {}
