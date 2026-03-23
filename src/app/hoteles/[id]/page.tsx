@@ -16,7 +16,7 @@ export default async function HotelDetailPage({ params, searchParams }: { params
 
   const { data: hotel } = await supabase
     .from('hotels')
-    .select('*, destinations(id,code,name,country), rates(id,room_base,pc_rate,net_rate,season), promotions(id,title,description,promo_type,discount_pct,free_nights,valid_from,valid_until,book_by,conditions,active), tp_rates(id,option_desc,option_comment,room_base,tp_net_rate,date_from,date_to,synced_at), hotel_tp_room_map(option_desc,option_code)')
+    .select('id,name,category,priority,distance_center,contact_email,contact_phone,is_family,is_direct,platform_name,currency,tourplan_code,closing_info,active, destinations(id,code,name,country), rates(id,room_base,pc_rate,net_rate,season), promotions(id,title,description,promo_type,discount_pct,free_nights,valid_from,valid_until,book_by,conditions,active), tp_rates(id,option_desc,option_comment,room_base,tp_net_rate,date_from,date_to,synced_at), hotel_tp_room_map(option_desc,option_code)')
     .eq('id', params.id)
     .single() as any
 
@@ -26,7 +26,11 @@ export default async function HotelDetailPage({ params, searchParams }: { params
   const rates = (hotel.rates ?? []) as any[]
   const promos = (hotel.promotions ?? []) as any[]
   const tpRates = (hotel.tp_rates ?? []) as any[]
-  const mappedOption = (hotel.hotel_tp_room_map as any)?.[0]?.option_desc ?? null
+  const tpRoomMap = Array.isArray(hotel.hotel_tp_room_map) 
+    ? hotel.hotel_tp_room_map[0] 
+    : hotel.hotel_tp_room_map
+  const mappedOption = (tpRoomMap as any)?.option_desc ?? null
+  const mappedOptionCode = (tpRoomMap as any)?.option_code ?? null
   const viewDate = searchParams?.date ?? new Date().toISOString().split('T')[0]
   const tpSyncedAt = tpRates[0]?.synced_at ? new Date(tpRates[0].synced_at).toLocaleDateString('es-AR') : null
   const r = (base: string, season: string) => rates.find((r: any) => r.room_base === base && r.season === season)
@@ -97,7 +101,7 @@ export default async function HotelDetailPage({ params, searchParams }: { params
             {hotel.tourplan_code && (
               <span style={{ fontSize:'10px', color:'#b8a99a', fontFamily:'monospace' }}>
                 TP #{hotel.tourplan_code}
-                {mappedOption && <span style={{ color:'#9a8d82' }}> · {(hotel.hotel_tp_room_map as any)?.[0]?.option_code ?? mappedOption}</span>}
+                {mappedOption && <span style={{ color:'#9a8d82' }}> · {mappedOptionCode ?? mappedOption}</span>}
                 {!mappedOption && <span style={{ color:'#e57373' }}> · ⚠ sin mapeo</span>}
               </span>
             )}
