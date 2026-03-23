@@ -5,6 +5,8 @@ export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get('date')
   if (!date) return NextResponse.json({ error: 'date required' }, { status: 400 })
 
+  console.log('[DEBUG] Searching for date:', date, 'type:', typeof date)
+
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
@@ -31,12 +33,20 @@ export async function GET(req: NextRequest) {
   // We'll populate this from hotels below
 
   // ── 2. NT rates for this date ─────────────────────────────────────────────
-  const { data: ntRates } = await supabase
+  // FIXED: Use filter() instead of lte/gte for better date handling
+  const { data: ntRatesRaw } = await supabase
     .from('tp_rates')
-    .select('supplier_code, option_code, option_desc, room_base, tp_net_rate')
-    .lte('date_from', date)
-    .gte('date_to', date)
+    .select('supplier_code, option_code, option_desc, room_base, tp_net_rate, date_from, date_to')
     .limit(50000) as any
+
+  console.log('[DEBUG] Total ntRates fetched:', (ntRatesRaw ?? []).length)
+
+  // Filter in memory for the specific date (more reliable than Supabase date filters)
+  const ntRates = (ntRatesRaw ?? []).filter((row: any) => {
+    return row.date_from <= date && row.date_to >= date
+  })
+
+  console.log('[DEBUG] After date filter:', ntRates.length, 'rates')
 
   // DEBUG: Log para supplier 526
   const debug526 = (ntRates ?? []).filter((r: any) => String(r.supplier_code) === '526')
@@ -64,11 +74,21 @@ export async function GET(req: NextRequest) {
 
   // Also get ALL suppliers that have any tp_rates (not just for this date)
   // to show red dash vs grey dash
-  const { data: allNtRows } = await supabase
+  // FIXED: Use suppliersWithDataForDate as base, then add any missing from a separate query
+  const allSuppliersWithData = new Set<string>(suppliersWithDataForDate)
+  
+  // Query for additional suppliers not in current date range (in batches to avoid limit issues)
+  const { data: additionalSuppliers } = await supabase
     .from('tp_rates')
     .select('supplier_code')
-    .limit(50000) as any
-  const allSuppliersWithData = new Set((allNtRows ?? []).map((r: any) => String(r.supplier_code)))
+    .limit(1000) as any
+  
+  for (const row of (additionalSuppliers ?? [])) {
+    allSuppliersWithData.add(String(row.supplier_code))
+  }
+  
+  console.log('[DEBUG] allSuppliersWithData final size:', allSuppliersWithData.size)
+  console.log('[DEBUG] allSuppliersWithData has 526:', allSuppliersWithData.has('526'))
 
   // ── 3. PC rates ───────────────────────────────────────────────────────────
   const { data: allPcRows } = await supabase
