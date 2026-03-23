@@ -18,6 +18,7 @@ type DateRate = {
   sgl_nt: number | null; dbl_nt: number | null; tpl_nt: number | null
   sgl_pc: number | null; dbl_pc: number | null; tpl_pc: number | null
   nt_has_data: boolean; pc_has_data: boolean
+  nt_is_expired?: boolean // Flag para indicar si la tarifa NT está vencida
 }
 
 type Hotel = {
@@ -74,15 +75,32 @@ function splitHotelName(fullName: string): { name: string; desc: string } {
 }
 
 // ── RateCell — shows value, red dash, or grey dash ───────────────────────────
-function RateCell({ value, hasData, isPC }: { value: number | null; hasData: boolean; isPC: boolean }) {
+function RateCell({ value, hasData, isPC, isExpired }: { 
+  value: number | null; 
+  hasData: boolean; 
+  isPC: boolean;
+  isExpired?: boolean 
+}) {
   const color = isPC ? '#2c2420' : '#a09080'
+  
   if (value != null) {
-    return <div style={{ fontSize: '12px', color, textAlign: 'right', fontFamily: 'monospace' }}>${value}</div>
+    return (
+      <div style={{ fontSize: '12px', color, textAlign: 'right', fontFamily: 'monospace' }}>
+        ${value}
+        {isExpired && (
+          <div style={{ fontSize: '9px', color: '#e74c3c', fontStyle: 'italic', marginTop: '2px' }}>
+            (vencida)
+          </div>
+        )}
+      </div>
+    )
   }
+  
   if (hasData) {
     // Has TP data but no rate for this date → red dash
     return <div style={{ fontSize: '12px', color: '#e74c3c', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>—</div>
   }
+  
   // No TP data at all → grey dash
   return <div style={{ fontSize: '12px', color: '#d0ccc8', textAlign: 'right', fontFamily: 'monospace' }}>—</div>
 }
@@ -165,11 +183,11 @@ function HotelRow({ hotel, idx, isAdmin, onNavigate, dateRate }: {
 
       {/* Rate cells: SGL PC, SGL NT, DBL PC, DBL NT, TPL PC, TPL NT */}
       <RateCell value={dateRate?.sgl_pc ?? null} hasData={dateRate?.pc_has_data ?? false} isPC={true} />
-      <RateCell value={dateRate?.sgl_nt ?? null} hasData={dateRate?.nt_has_data ?? false} isPC={false} />
+      <RateCell value={dateRate?.sgl_nt ?? null} hasData={dateRate?.nt_has_data ?? false} isPC={false} isExpired={dateRate?.nt_is_expired} />
       <RateCell value={dateRate?.dbl_pc ?? null} hasData={dateRate?.pc_has_data ?? false} isPC={true} />
-      <RateCell value={dateRate?.dbl_nt ?? null} hasData={dateRate?.nt_has_data ?? false} isPC={false} />
+      <RateCell value={dateRate?.dbl_nt ?? null} hasData={dateRate?.nt_has_data ?? false} isPC={false} isExpired={dateRate?.nt_is_expired} />
       <RateCell value={dateRate?.tpl_pc ?? null} hasData={dateRate?.pc_has_data ?? false} isPC={true} />
-      <RateCell value={dateRate?.tpl_nt ?? null} hasData={dateRate?.nt_has_data ?? false} isPC={false} />
+      <RateCell value={dateRate?.tpl_nt ?? null} hasData={dateRate?.nt_has_data ?? false} isPC={false} isExpired={dateRate?.nt_is_expired} />
     </div>
   )
 }
