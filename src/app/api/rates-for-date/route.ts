@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
   const allSuppliersWithData = new Set<string>(suppliersWithDataForDate)
   
   // Query for additional suppliers not in current date range (in batches to avoid limit issues)
-  const { data: additionalSuppliers } = await adminSupabase
+  const { data: additionalSuppliers } = await supabase
     .from('tp_rates')
     .select('supplier_code')
     .limit(1000) as any
