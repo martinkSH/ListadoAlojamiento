@@ -38,6 +38,13 @@ export async function GET(req: NextRequest) {
     .gte('date_to', date)
     .limit(50000) as any
 
+  // DEBUG: Log para supplier 526
+  const debug526 = (ntRates ?? []).filter((r: any) => String(r.supplier_code) === '526')
+  console.log('[DEBUG] Rates for supplier 526:', debug526.length, 'rows')
+  if (debug526.length > 0) {
+    console.log('[DEBUG] Sample 526 rate:', debug526[0])
+  }
+
   // Build: "supplierCode__optionCode" → { SGL, DBL, TPL }
   // Also track which suppliers have data FOR THIS DATE
   const ntMap = new Map<string, Record<string, number>>()
@@ -50,6 +57,10 @@ export async function GET(req: NextRequest) {
     if (!ntMap.has(key)) ntMap.set(key, {})
     ntMap.get(key)![row.room_base] = row.tp_net_rate
   }
+  
+  // DEBUG: Verificar si 526 está en los sets
+  console.log('[DEBUG] suppliersWithDataForDate has 526?', suppliersWithDataForDate.has('526'))
+  console.log('[DEBUG] ntMap keys with 526:', Array.from(ntMap.keys()).filter(k => k.startsWith('526__')))
 
   // Also get ALL suppliers that have any tp_rates (not just for this date)
   // to show red dash vs grey dash
@@ -91,6 +102,16 @@ export async function GET(req: NextRequest) {
     const tpCode = hotel.tourplan_code?.trim()
     const mapping = mappingByHotel.get(hotel.id)
 
+    // DEBUG: Log para el hotel Design Suites
+    if (hotel.id === '4f36157a-5de6-560c-82c5-a0e1834fb75e') {
+      console.log('[DEBUG] Design Suites Calafate:')
+      console.log('  tpCode:', tpCode, 'type:', typeof tpCode)
+      console.log('  mapping:', mapping)
+      console.log('  allSuppliersWithData.has(tpCode):', allSuppliersWithData.has(tpCode))
+      console.log('  allSuppliersWithData size:', allSuppliersWithData.size)
+      console.log('  allSuppliersWithData has "526":', allSuppliersWithData.has('526'))
+    }
+
     const hasMapping = !!mapping && !!tpCode
     // nt_has_data = hotel has a mapping AND supplier has ANY data in tp_rates
     const hasNtData = hasMapping && allSuppliersWithData.has(tpCode)
@@ -104,6 +125,13 @@ export async function GET(req: NextRequest) {
       const byCode = mapping!.code ? ntMap.get(`${tpCode}__${mapping!.code}`) : undefined
       const byDesc = mapping!.desc ? ntMap.get(`${tpCode}__${mapping!.desc}`) : undefined
       nt = byCode ?? byDesc ?? {}
+      
+      // DEBUG: Log búsqueda para Design Suites
+      if (hotel.id === '4f36157a-5de6-560c-82c5-a0e1834fb75e') {
+        console.log('  Searching byCode:', `${tpCode}__${mapping!.code}`, '→', byCode)
+        console.log('  Searching byDesc:', `${tpCode}__${mapping!.desc}`, '→', byDesc)
+        console.log('  Final nt:', nt)
+      }
     }
 
     const pc = pcMap.get(pcKey) ?? {}
