@@ -12,7 +12,8 @@ export async function GET(req: NextRequest) {
   // ── 1. Room mappings ─────────────────────────────────────────────────────
   const { data: mappings } = await supabase
     .from('hotel_tp_room_map')
-    .select('hotel_id, option_code, option_desc') as any
+    .select('hotel_id, option_code, option_desc')
+    .limit(10000) as any
 
   const norm = (s: string) => s?.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() ?? ''
 
@@ -27,7 +28,8 @@ export async function GET(req: NextRequest) {
 
   // ── 2. Hotels with ANY nt data ───────────────────────────────────────────
   const { data: allNtRows } = await supabase
-    .from('tp_rates').select('hotel_id').not('hotel_id', 'is', null) as any
+    .from('tp_rates').select('hotel_id').not('hotel_id', 'is', null)
+    .limit(50000) as any
   const hotelsWithNtData = new Set((allNtRows ?? []).map((r: any) => r.hotel_id))
 
   // ── 3. NT rates for this date ────────────────────────────────────────────
@@ -36,7 +38,8 @@ export async function GET(req: NextRequest) {
     .select('hotel_id, option_code, option_desc, room_base, tp_net_rate')
     .lte('date_from', date)
     .gte('date_to', date)
-    .not('hotel_id', 'is', null) as any
+    .not('hotel_id', 'is', null)
+    .limit(50000) as any
 
   // Match: option_code if both sides have it, else option_desc normalized
   const ntMap = new Map<string, Record<string, number>>()
