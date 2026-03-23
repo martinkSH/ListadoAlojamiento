@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   // Build NT lookup: supplier_code + option_code → { SGL, DBL, TPL }
   const ntBySupplier = new Map<string, Record<string, number>>()
   for (const row of (ntRates ?? [])) {
-    const key = `${row.supplier_code}__${row.option_code ?? row.option_desc}`
+    const key = `${String(row.supplier_code)}__${row.option_code ?? row.option_desc}`
     if (!ntBySupplier.has(key)) ntBySupplier.set(key, {})
     ntBySupplier.get(key)![row.room_base] = row.tp_net_rate
   }
