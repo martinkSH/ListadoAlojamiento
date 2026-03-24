@@ -35,11 +35,24 @@ export async function POST(req: Request) {
     }
 
     // ── Step 1: Get all supplier codes from our hotels ─────────────────────
-    const { data: hotels } = await supabase
-      .from('hotels')
-      .select('id, tourplan_code, category, destination_id, destinations(code)')
-      .eq('active', true)
-      .not('tourplan_code', 'is', null) as any
+    // FIXED: Paginate to get ALL hotels (not just 1000)
+    let hotels: any[] = []
+    let page = 0
+    const pageSize = 1000
+    
+    while (true) {
+      const { data, error } = await supabase
+        .from('hotels')
+        .select('id, tourplan_code, category, destination_id, destinations(code)')
+        .eq('active', true)
+        .not('tourplan_code', 'is', null)
+        .range(page * pageSize, (page + 1) * pageSize - 1)
+      
+      if (error || !data || data.length === 0) break
+      hotels = hotels.concat(data)
+      if (data.length < pageSize) break
+      page++
+    }
 
     const supplierCodes = Array.from(new Set(
       (hotels ?? [])
@@ -47,7 +60,7 @@ export async function POST(req: Request) {
         .filter(Boolean)
     )) as string[]
 
-    console.log(`[sync] ${supplierCodes.length} supplier codes to fetch`)
+    console.log(`[sync] ${hotels.length} active hotels, ${supplierCodes.length} unique supplier codes to fetch`)
 
     // Build hotel lookup: supplierCode → [{ id, category, destCode }]
     const hotelBySupplier = new Map<string, any[]>()
@@ -195,9 +208,25 @@ export async function POST(req: Request) {
     }
 
     // Update hotel_tp_room_map with option_code
-    const { data: mappings2 } = await supabase
-      .from('hotel_tp_room_map').select('id, hotel_id, option_desc') as any
-    for (const m of (mappings2 ?? [])) {
+    // FIXED: Paginate to get ALL mappings
+    let mappings2: any[] = []
+    page = 0
+    
+    while (true) {
+      const { data, error } = await supabase
+        .from('hotel_tp_room_map')
+        .select('id, hotel_id, option_desc')
+        .range(page * pageSize, (page + 1) * pageSize - 1)
+      
+      if (error || !data || data.length === 0) break
+      mappings2 = mappings2.concat(data)
+      if (data.length < pageSize) break
+      page++
+    }
+    
+    console.log(`[sync] Updating option_code for ${mappings2.length} mappings`)
+    
+    for (const m of mappings2) {
       const key = `${m.hotel_id}__${m.option_desc}`
       const code = optCodeMap.get(key)
       if (code) {
@@ -216,12 +245,27 @@ export async function POST(req: Request) {
       }
     }
     // Update tp_rates rows that still have null option_code
-    const { data: nullRates } = await supabase
-      .from('tp_rates')
-      .select('id, hotel_id, option_desc')
-      .is('option_code', null)
-      .not('hotel_id', 'is', null) as any
-    for (const r of (nullRates ?? [])) {
+    // FIXED: Paginate to get ALL null rates
+    let nullRates: any[] = []
+    page = 0
+    
+    while (true) {
+      const { data, error } = await supabase
+        .from('tp_rates')
+        .select('id, hotel_id, option_desc')
+        .is('option_code', null)
+        .not('hotel_id', 'is', null)
+        .range(page * pageSize, (page + 1) * pageSize - 1)
+      
+      if (error || !data || data.length === 0) break
+      nullRates = nullRates.concat(data)
+      if (data.length < pageSize) break
+      page++
+    }
+    
+    console.log(`[sync] Updating option_code for ${nullRates.length} null rates`)
+    
+    for (const r of nullRates) {
       const key = `${r.hotel_id}|||${r.option_desc}`
       const code = hotelDescToCode.get(key)
       if (code) {
