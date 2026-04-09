@@ -97,16 +97,24 @@ export async function POST(req: Request) {
           OPT.DESCRIPTION AS optionDesc,
           OSR.DATE_FROM   AS dateFrom,
           OSR.DATE_TO     AS dateTo,
+          OSR.PROV        AS tariffStatus,
+          OSR.BUY_CURRENCY AS currency,
           OPD.SS          AS sgl,
           OPD.TW          AS dbl,
-          OPD.TR          AS tpl
+          OPD.TR          AS tpl,
+          SOD.SINGLE_AVAIL AS sglAvail,
+          SOD.TWIN_AVAIL   AS twnAvail,
+          SOD.DOUBLE_AVAIL AS dblAvail,
+          SOD.TRIPLE_AVAIL AS tplAvail
         FROM OPT
         JOIN OSR ON OSR.OPT_ID = OPT.OPT_ID
         JOIN OPD ON OPD.OSR_ID = OSR.OSR_ID
+        LEFT JOIN SOD ON SOD.SOD_ID = OPT.SOD_ID
         WHERE
           OPT.SUPPLIER    IN (${inClause})
           AND OPT.SERVICE = 'AC'
           AND OPT.AC      IN ('Y', 'A')
+          AND OPT.DELETED = 0
           AND OSR.PRICE_CODE = 'NR'
           AND OPD.RATE_TYPE  = 'FC'
           AND OPD.AGE_CATEGORY = 'AD'
@@ -133,8 +141,8 @@ export async function POST(req: Request) {
         : String(row.dateTo).slice(0, 10)
 
       for (const hotel of hotelList) {
-        // SGL
-        if (row.sgl > 0 && row.sgl < 9000) {
+        // SGL - Only if SINGLE_AVAIL = 1
+        if (row.sgl > 0 && row.sgl < 9000 && row.sglAvail === 1) {
           tpRatesRows.push({
             hotel_id: hotel.id,
             supplier_code: parseInt(supplierCode),
@@ -147,8 +155,8 @@ export async function POST(req: Request) {
             synced_at: startedAt,
           })
         }
-        // DBL
-        if (row.dbl > 0 && row.dbl < 9000) {
+        // DBL - Only if TWIN_AVAIL = 1 OR DOUBLE_AVAIL = 1
+        if (row.dbl > 0 && row.dbl < 9000 && (row.twnAvail === 1 || row.dblAvail === 1)) {
           tpRatesRows.push({
             hotel_id: hotel.id,
             supplier_code: parseInt(supplierCode),
@@ -161,8 +169,8 @@ export async function POST(req: Request) {
             synced_at: startedAt,
           })
         }
-        // TPL
-        if (row.tpl > 0 && row.tpl < 9000) {
+        // TPL - Only if TRIPLE_AVAIL = 1
+        if (row.tpl > 0 && row.tpl < 9000 && row.tplAvail === 1) {
           tpRatesRows.push({
             hotel_id: hotel.id,
             supplier_code: parseInt(supplierCode),
@@ -281,6 +289,7 @@ export async function POST(req: Request) {
         OPT.DESCRIPTION AS optionDesc,
         OSR.DATE_FROM   AS dateFrom,
         OSR.DATE_TO     AS dateTo,
+        OSR.PROV        AS tariffStatus,
         OPD.SS          AS sgl,
         OPD.TW          AS dbl,
         OPD.TR          AS tpl
@@ -291,6 +300,7 @@ export async function POST(req: Request) {
         OPT.SUPPLIER    = '${PC_SUPPLIER}'
         AND OPT.SERVICE = 'AC'
         AND OPT.AC      IN ('Y', 'A')
+        AND OPT.DELETED = 0
         AND OSR.PRICE_CODE = 'NR'
         AND OPD.RATE_TYPE  = 'FC'
         AND OPD.AGE_CATEGORY = 'AD'
@@ -299,6 +309,7 @@ export async function POST(req: Request) {
     `)
 
     await pool.close()
+    console.log(`[sync] SQL connection closed`)
 
     const pcRows = pcResult.recordset as any[]
     console.log(`[sync] PC raw rows from TP: ${pcRows.length}`)
