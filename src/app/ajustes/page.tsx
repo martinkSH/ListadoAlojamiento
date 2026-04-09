@@ -52,8 +52,6 @@ export default function AjustesPage() {
   const [userId, setUserId] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [defaultDate, setDefaultDate] = useState('')
   const [savingDate, setSavingDate] = useState(false)
   const [dateSaved, setDateSaved] = useState(false)
@@ -117,134 +115,23 @@ export default function AjustesPage() {
     setSyncing(false)
   }
 
-  async function handleImportTarifario(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setImporting(true)
-    setImportResult(null)
-    try {
-      // Parse Excel in browser first
-      const XLSX = await import('xlsx')
-      const buffer = await file.arrayBuffer()
-      const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true })
-      const ws = wb.Sheets['Product Tariff Room']
-      if (!ws) throw new Error('No se encontró la hoja "Product Tariff Room"')
-
-      const raw: any[] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
-      const headerIdx = raw.findIndex((r: any) => r && r.includes('supplierCode'))
-      if (headerIdx === -1) throw new Error('No se encontró la fila de encabezados')
-
-      const headers: string[] = raw[headerIdx]
-      const iSupplier = headers.indexOf('supplierCode')
-      const iOptCode = headers.indexOf('optionCode')
-      const iOptDesc = headers.indexOf('optionDescription')
-      const iServItem = headers.indexOf('servItem')
-      const iDateFrom = headers.indexOf('dateFrom')
-      const iDateTo = headers.indexOf('dateTo')
-      
-      // Buscar columna de costo - puede ser 'Fits Cost' o 'Fits Sell'
-      let iFitsCost = headers.indexOf('Fits Cost')
-      if (iFitsCost === -1) {
-        iFitsCost = headers.indexOf('Fits Sell')
-      }
-      
-      if (iFitsCost === -1) {
-        throw new Error('No se encontró columna de costo (Fits Cost o Fits Sell)')
-      }
-      
-      console.log('[IMPORT] Columnas encontradas:')
-      console.log('  - supplierCode:', iSupplier !== -1 ? '✓' : '✗')
-      console.log('  - optionCode:', iOptCode !== -1 ? '✓' : '✗')
-      console.log('  - optionDescription:', iOptDesc !== -1 ? '✓' : '✗')
-      console.log('  - servItem:', iServItem !== -1 ? '✓' : '✗')
-      console.log('  - dateFrom:', iDateFrom !== -1 ? '✓' : '✗')
-      console.log('  - dateTo:', iDateTo !== -1 ? '✓' : '✗')
-      console.log('  - Costo (columna):', headers[iFitsCost])
-
-      const ROOM_MAP: Record<string, string> = { Single: 'SGL', Double: 'DBL', Twin: 'DBL', Triple: 'TPL' }
-      const today = new Date(); today.setHours(0,0,0,0)
-
-      let lastSupplier = '', lastOptCode = '', lastOptDesc = ''
-      const seen = new Map<string, any>()
-
-      for (let i = headerIdx + 1; i < raw.length; i++) {
-        const r = raw[i]
-        if (!r) continue
-        if (r[iSupplier]) lastSupplier = String(r[iSupplier]).trim()
-        if (r[iOptCode]) lastOptCode = String(r[iOptCode]).trim()
-        if (r[iOptDesc]) lastOptDesc = String(r[iOptDesc]).trim()
-
-        const roomBase = ROOM_MAP[r[iServItem] ? String(r[iServItem]).trim() : '']
-        if (!roomBase) continue
-
-        const dateTo = r[iDateTo] instanceof Date ? r[iDateTo] : new Date(r[iDateTo])
-        const dateFrom = r[iDateFrom] instanceof Date ? r[iDateFrom] : new Date(r[iDateFrom])
-        if (!dateTo || dateTo < today) continue
-
-        const fitsCost = parseFloat(r[iFitsCost])
-        if (!fitsCost || fitsCost <= 0 || fitsCost >= 9000) continue
-        const supplierInt = parseInt(lastSupplier)
-        if (isNaN(supplierInt)) continue
-
-        const dateFromStr = dateFrom.toISOString().split('T')[0]
-        const dateToStr = dateTo.toISOString().split('T')[0]
-        const key = `${supplierInt}|${lastOptDesc}|${roomBase}|${dateFromStr}`
-        if (!seen.has(key) || fitsCost > seen.get(key).fitsCost) {
-          seen.set(key, { supplierCode: supplierInt, optionCode: lastOptCode, optionDesc: lastOptDesc, roomBase, fitsCost, dateFrom: dateFromStr, dateTo: dateToStr })
-        }
-      }
-
-      const rows = Array.from(seen.values())
-      console.log('[IMPORT] Procesamiento completado:')
-      console.log('  - Filas en Excel:', raw.length - headerIdx - 1)
-      console.log('  - Filas únicas procesadas:', rows.length)
-      console.log('  - Suppliers únicos:', new Set(rows.map(r => r.supplierCode)).size)
-      
-      setImportResult({ ok: true, msg: `Procesando ${rows.length} filas...` })
-
-      // Send in batches of 2000 rows to avoid payload size limits
-      const BATCH = 2000
-      let totalInserted = 0
-      let isFirst = true
-      for (let i = 0; i < rows.length; i += BATCH) {
-        const batch = rows.slice(i, i + BATCH)
-        setImportResult({ ok: true, msg: `Enviando ${i + batch.length} / ${rows.length} filas...` })
-        const res = await fetch('/api/import-tarifario', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rows: batch, truncate: isFirst })
-        })
-        const data = await res.json()
-        if (!data.ok) {
-          setImportResult({ ok: false, msg: data.error ?? 'Error al importar' })
-          return
-        }
-        totalInserted += data.inserted
-        isFirst = false
-      }
-      setImportResult({ ok: true, msg: `✓ ${totalInserted} tarifas importadas` })
-    } catch (err: any) {
-      setImportResult({ ok: false, msg: err.message })
-    } finally {
-      setImporting(false)
-      e.target.value = ''
-    }
-  }
-
-  async function loadCategories(id: string) {
-    if (!id) { setAvailableCategories([]); return }
+  useEffect(() => {
+    if (!destId) { setAvailableCategories([]); return }
     setLoadingCats(true)
-    const { data } = await supabase
+    supabase
       .from('hotels')
       .select('category')
-      .eq('destination_id', id)
-      .eq('active', true) as any
-    const cats = Array.from(new Set((data ?? []).map((h: any) => h.category)))
-      .sort((a: any, b: any) => CATEGORIES.indexOf(a) - CATEGORIES.indexOf(b))
-    setAvailableCategories(cats as string[])
-    if (cats.length > 0) setCategory(cats[0] as string)
-    setLoadingCats(false)
-  }
+      .eq('destination_id', destId)
+      .eq('active', true)
+      .then(({ data }) => {
+        const cats = Array.from(new Set((data ?? []).map((h: any) => h.category)))
+          .filter(c => CATEGORIES.includes(c))
+          .sort((a, b) => CATEGORIES.indexOf(a) - CATEGORIES.indexOf(b))
+        setAvailableCategories(cats as string[])
+        if (cats.length && !cats.includes(category)) setCategory(cats[0] as string)
+        setLoadingCats(false)
+      })
+  }, [destId])
 
   async function loadHistory() {
     const { data } = await supabase
@@ -255,7 +142,6 @@ export default function AjustesPage() {
     setHistory(data ?? [])
   }
 
-  // Preview: busca todas las rates PC afectadas
   async function handlePreview() {
     if (!destId || !pct || isNaN(parseFloat(pct))) return
     setLoadingPreview(true)
@@ -305,14 +191,12 @@ export default function AjustesPage() {
     setApplying(true)
     setMessage(null)
 
-    // Update all rates
     await Promise.all(
       preview.map(r =>
         supabase.from('rates').update({ pc_rate: r.new_pc }).eq('id', r.rate_id)
       )
     )
 
-    // Save to history
     await supabase.from('rate_adjustments').insert({
       destination_id: destId,
       category,
@@ -390,306 +274,231 @@ export default function AjustesPage() {
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
           <div style={{ maxWidth: '800px', margin: '0 auto' }}>
 
-            {/* Formulario */}
             {/* Sync TourPlan */}
             <div style={{ background: C.card, border: `0.5px solid ${C.cardBorder}`, borderRadius: '10px', marginBottom: '16px', overflow: 'hidden' }}>
               <div style={{ padding: '9px 16px', borderBottom: `0.5px solid ${C.cardBorder}`, background: C.cardHead, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '10px', fontWeight: 700, color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>Sync TourPlan — Tarifas</span>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>Sync TourPlan — Tarifas NT y PC</span>
                 <span style={{ fontSize: '9px', color: C.label }}>Automático: todos los días 6am UTC</span>
               </div>
-              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' as const }}>
-                <button
-                  onClick={handleSyncTP}
-                  disabled={syncing}
-                  style={{
-                    padding: '8px 20px', fontSize: '12px', fontWeight: 600, fontFamily: font,
-                    background: syncing ? '#a09080' : C.btnPrimary, color: '#fff',
-                    border: 'none', borderRadius: '7px', cursor: syncing ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {syncing ? 'Sincronizando...' : '⟳ Sync ahora'}
-                </button>
-                {syncResult && (
-                  <div style={{
-                    fontSize: '12px', padding: '6px 12px', borderRadius: '6px',
-                    background: syncResult.ok ? C.successBg : C.errorBg,
-                    color: syncResult.ok ? C.success : C.error,
-                    border: `1px solid ${syncResult.ok ? C.successBorder : C.errorBorder}`,
-                  }}>
-                    {syncResult.msg}
-                  </div>
-                )}
+              <div style={{ padding: '14px 16px' }}>
+                <div style={{ marginBottom: '12px', fontSize: '12px', color: C.muted, lineHeight: '1.5' }}>
+                  El sync conecta directamente con TourPlan y actualiza todas las tarifas NT (netas) y PC (precio categoría) automáticamente.
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' as const }}>
+                  <button
+                    onClick={handleSyncTP}
+                    disabled={syncing}
+                    style={{
+                      padding: '8px 20px', fontSize: '12px', fontWeight: 600, fontFamily: font,
+                      background: syncing ? '#a09080' : C.btnPrimary, color: '#fff',
+                      border: 'none', borderRadius: '7px', cursor: syncing ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {syncing ? 'Sincronizando...' : '⟳ Sync ahora'}
+                  </button>
+                  {syncResult && (
+                    <div style={{
+                      fontSize: '12px', padding: '6px 12px', borderRadius: '6px',
+                      background: syncResult.ok ? C.successBg : C.errorBg,
+                      color: syncResult.ok ? C.success : C.error,
+                      border: `1px solid ${syncResult.ok ? C.successBorder : C.errorBorder}`,
+                    }}>
+                      {syncResult.msg}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Import tarifario */}
-            <div style={{ background: C.card, border: `0.5px solid ${C.cardBorder}`, borderRadius: '10px', marginBottom: '16px', overflow: 'hidden' }}>
-              <div style={{ padding: '9px 16px', borderBottom: `0.5px solid ${C.cardBorder}`, background: C.cardHead, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '10px', fontWeight: 700, color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>Importar Tarifario TourPlan</span>
-                <span style={{ fontSize: '9px', color: C.label }}>Reemplaza todas las tarifas NT actuales</span>
-              </div>
-              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' as const }}>
-                <label style={{
-                  padding: '8px 20px', fontSize: '12px', fontWeight: 600, fontFamily: font,
-                  background: importing ? '#a09080' : '#4a7a4a', color: '#fff',
-                  borderRadius: '7px', cursor: importing ? 'not-allowed' : 'pointer',
-                  display: 'inline-block', userSelect: 'none' as const,
-                }}>
-                  {importing ? 'Procesando...' : '↑ Subir tarifario (.xlsm)'}
-                  <input type="file" accept=".xlsm,.xlsx" onChange={handleImportTarifario}
-                    disabled={importing} style={{ display: 'none' }} />
-                </label>
-                {importResult && (
-                  <div style={{
-                    fontSize: '12px', padding: '6px 12px', borderRadius: '6px',
-                    background: importResult.ok ? C.successBg : C.errorBg,
-                    color: importResult.ok ? C.success : C.error,
-                    border: `1px solid ${importResult.ok ? C.successBorder : C.errorBorder}`,
-                  }}>
-                    {importResult.msg}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Fecha default del listado */}
+            {/* Fecha por defecto */}
             <div style={{ background: C.card, border: `0.5px solid ${C.cardBorder}`, borderRadius: '10px', marginBottom: '16px', overflow: 'hidden' }}>
               <div style={{ padding: '9px 16px', borderBottom: `0.5px solid ${C.cardBorder}`, background: C.cardHead }}>
-                <span style={{ fontSize: '10px', fontWeight: 700, color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>Fecha default del listado</span>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>Fecha por defecto (vista hoteles)</span>
               </div>
-              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' as const }}>
-                <div>
-                  <div style={{ fontSize: '10px', color: C.label, marginBottom: '4px' }}>Los usuarios verán esta fecha al abrir el listado</div>
-                  {(() => {
-                    const [y, m, d] = defaultDate ? defaultDate.split('-') : ['2026', '05', '01']
-                    const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
-                    const days = Array.from({length: 31}, (_: any, i: number) => i + 1)
-                    const years = ['2026', '2027']
-                    const selSx: React.CSSProperties = {
-                      fontSize: '12px', padding: '6px 8px', border: `1px solid ${C.inputBorder}`,
-                      borderRadius: '6px', background: C.input, color: C.text,
-                      fontFamily: font, outline: 'none', cursor: 'pointer',
-                    }
-                    const updateDate = (newY: string, newM: string, newD: string) => {
-                      if (newY && newM && newD) {
-                        setDefaultDate(`${newY}-${newM.padStart(2,'0')}-${newD.padStart(2,'0')}`)
-                      }
-                    }
-                    return (
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        <select value={d} onChange={e => updateDate(y, m, e.target.value)} style={selSx}>
-                          {days.map((day: number) => <option key={day} value={String(day).padStart(2,'0')}>{day}</option>)}
-                        </select>
-                        <select value={m} onChange={e => updateDate(y, e.target.value, d)} style={selSx}>
-                          {months.map((mn: string, i: number) => <option key={i+1} value={String(i+1).padStart(2,'0')}>{mn}</option>)}
-                        </select>
-                        <select value={y} onChange={e => updateDate(e.target.value, m, d)} style={selSx}>
-                          {years.map((yr: string) => <option key={yr} value={yr}>{yr}</option>)}
-                        </select>
-                      </div>
-                    )
-                  })()}
-                </div>
+              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input
+                  type="date"
+                  value={defaultDate}
+                  onChange={(e) => setDefaultDate(e.target.value)}
+                  style={{ ...inputSx, width: '180px' }}
+                />
                 <button
                   onClick={saveDefaultDate}
                   disabled={savingDate || !defaultDate}
                   style={{
-                    padding: '8px 20px', fontSize: '12px', fontWeight: 600, fontFamily: font,
+                    padding: '8px 16px', fontSize: '12px', fontWeight: 600, fontFamily: font,
                     background: savingDate ? '#a09080' : C.btnPrimary, color: '#fff',
-                    border: 'none', borderRadius: '7px', cursor: savingDate ? 'not-allowed' : 'pointer',
-                    marginTop: '16px',
+                    border: 'none', borderRadius: '7px',
+                    cursor: (savingDate || !defaultDate) ? 'not-allowed' : 'pointer',
                   }}
                 >
                   {savingDate ? 'Guardando...' : 'Guardar'}
                 </button>
-                {dateSaved && <span style={{ fontSize: '12px', color: '#27ae60', marginTop: '16px' }}>✓ Guardado</span>}
+                {dateSaved && (
+                  <span style={{ fontSize: '12px', color: C.success }}>✓ Guardado</span>
+                )}
               </div>
             </div>
 
-            {Section({ title: 'Configurar ajuste', children: (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '14px' }}>
-                  <div>
-                    <Label t="Destino" />
-                    <select value={destId} onChange={e => { setDestId(e.target.value); setPreview([]); loadCategories(e.target.value) }} style={{ ...inputSx, width: '100%' }}>
-                      <option value="">Seleccionar...</option>
-                      {['AR','CL','BR','PE','UY','PY','CO','EC','BO'].map(country => {
-                        const dests = destinations.filter(d => d.country === country)
-                        if (!dests.length) return null
-                        return (
-                          <optgroup key={country} label={`${COUNTRY_FLAGS[country] ?? ''} ${country}`}>
-                            {dests.map(d => <option key={d.id} value={d.id}>{d.name} ({d.code})</option>)}
-                          </optgroup>
-                        )
-                      })}
-                    </select>
-                  </div>
-                  <div>
-                    <Label t="Categoría" />
-                    <select
-                      value={category}
-                      onChange={e => { setCategory(e.target.value); setPreview([]) }}
-                      disabled={!destId || loadingCats}
-                      style={{ ...inputSx, width: '100%', opacity: (!destId || loadingCats) ? 0.5 : 1 }}
-                    >
-                      {!destId && <option value="">Elegí un destino primero</option>}
-                      {loadingCats && <option>Cargando...</option>}
-                      {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <Label t="Temporada" />
-                    <select value={season} onChange={e => { setSeason(e.target.value); setPreview([]) }} style={{ ...inputSx, width: '100%' }}>
-                      {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <Label t="Ajuste %" />
-                    <div style={{ position: 'relative' }}>
-                      <input
-                        type="number" step="0.1" placeholder="Ej: 10 o -5"
-                        value={pct} onChange={e => { setPct(e.target.value); setPreview([]) }}
-                        style={{ ...inputSx, width: '100%',
-                          color: isIncrease ? C.increase : isDecrease ? C.decrease : C.text,
-                          fontWeight: pct ? 600 : 400,
-                        }}
-                      />
-                      {pct && !isNaN(pctNum) && (
-                        <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: isIncrease ? C.increase : C.decrease, fontWeight: 700 }}>
-                          {isIncrease ? '↑' : '↓'}{Math.abs(pctNum)}%
-                        </span>
-                      )}
-                    </div>
-                  </div>
+            <Section title="Ajuste porcentual de tarifas PC">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                <div>
+                  <Label t="Destino" />
+                  <select value={destId} onChange={e => setDestId(e.target.value)} style={{ ...inputSx, width: '100%' }}>
+                    <option value="">Seleccione destino</option>
+                    {destinations.map(d => (
+                      <option key={d.id} value={d.id}>
+                        {COUNTRY_FLAGS[d.country] ?? ''} {d.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                <div style={{ marginBottom: '14px' }}>
-                  <Label t="Nota (opcional)" />
-                  <input
-                    value={note} onChange={e => setNote(e.target.value)}
-                    placeholder="Ej: Ajuste temporada alta 2026"
-                    style={{ ...inputSx, width: '100%' }}
-                  />
+                <div>
+                  <Label t="Categoría" />
+                  <select value={category} onChange={e => setCategory(e.target.value)} disabled={!destId || loadingCats} style={{ ...inputSx, width: '100%' }}>
+                    {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </div>
 
+                <div>
+                  <Label t="Temporada" />
+                  <select value={season} onChange={e => setSeason(e.target.value)} style={{ ...inputSx, width: '100%' }}>
+                    {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <Label t="Ajuste %" />
+                  <input type="number" step="0.01" value={pct} onChange={e => setPct(e.target.value)} placeholder="ej: 10 o -5" style={{ ...inputSx, width: '100%' }} />
+                </div>
+              </div>
+
+              <div style={{ marginTop: '12px' }}>
+                <Label t="Nota (opcional)" />
+                <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="Descripción del ajuste" style={{ ...inputSx, width: '100%' }} />
+              </div>
+
+              <div style={{ marginTop: '16px', display: 'flex', gap: '10px' }}>
                 <button
                   onClick={handlePreview}
-                  disabled={!destId || !pct || isNaN(pctNum) || pctNum === 0 || loadingPreview}
-                  style={{ padding: '8px 20px', fontSize: '12px', background: (!destId || !pct) ? '#ccc5bb' : C.btnPrimary, color: '#fff', border: 'none', borderRadius: '7px', cursor: (!destId || !pct) ? 'not-allowed' : 'pointer', fontFamily: font, fontWeight: 600 }}
+                  disabled={!destId || !pct || isNaN(pctNum) || loadingPreview}
+                  style={{
+                    padding: '8px 18px', fontSize: '12px', fontWeight: 600, fontFamily: font,
+                    background: (!destId || !pct || loadingPreview) ? '#a09080' : C.btnPrimary,
+                    color: '#fff', border: 'none', borderRadius: '7px',
+                    cursor: (!destId || !pct || loadingPreview) ? 'not-allowed' : 'pointer',
+                  }}
                 >
-                  {loadingPreview ? 'Buscando...' : 'Ver preview →'}
+                  {loadingPreview ? 'Calculando...' : 'Vista Previa'}
                 </button>
-              </>
-            )})}
-
-            {/* Preview */}
-            {preview.length > 0 && (
-              Section({ title: `Preview — ${preview.length} tarifas a modificar`, children: (
-                <>
-                  {/* Resumen */}
-                  <div style={{ display: 'flex', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
-                    <div style={{ background: isIncrease ? C.increaseBg : C.decreaseBg, borderRadius: '8px', padding: '10px 16px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <span style={{ fontSize: '20px', fontWeight: 700, color: isIncrease ? C.increase : C.decrease }}>
-                        {isIncrease ? '+' : ''}{pctNum}%
-                      </span>
-                      <div>
-                        <div style={{ fontSize: '11px', fontWeight: 600, color: isIncrease ? C.increase : C.decrease }}>
-                          {isIncrease ? 'Aumento' : 'Reducción'}
-                        </div>
-                        <div style={{ fontSize: '10px', color: C.muted }}>{preview.length} tarifas PC · {season}</div>
-                      </div>
-                    </div>
-                    <div style={{ background: C.cardHead, borderRadius: '8px', padding: '10px 16px' }}>
-                      <div style={{ fontSize: '10px', color: C.label, marginBottom: '2px', textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Destino</div>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: C.text }}>
-                        {destinations.find(d => d.id === destId)?.name} · {category}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Tabla preview */}
-                  <div style={{ border: `0.5px solid ${C.cardBorder}`, borderRadius: '8px', overflow: 'hidden', marginBottom: '16px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 90px 90px 80px', padding: '6px 12px', background: C.cardHead, borderBottom: `0.5px solid ${C.cardBorder}` }}>
-                      {['Hotel', 'Base', 'PC actual', 'PC nueva', 'Diferencia'].map((h, i) => (
-                        <div key={i} style={{ fontSize: '9px', fontWeight: 700, color: C.label, letterSpacing: '0.07em', textTransform: 'uppercase' as const, textAlign: i > 1 ? 'right' : 'left' }}>{h}</div>
-                      ))}
-                    </div>
-                    {preview.map((r, i) => {
-                      const diff = Math.round((r.new_pc - r.current_pc) * 100) / 100
-                      return (
-                        <div key={r.rate_id} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 90px 90px 80px', padding: '5px 12px', borderBottom: i < preview.length - 1 ? `0.5px solid ${C.cardBorder}` : 'none', background: i % 2 === 0 ? '#fff' : C.bg, alignItems: 'center' }}>
-                          <div style={{ fontSize: '11px', color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.hotel_name}</div>
-                          <div style={{ fontSize: '10px', color: C.muted, fontWeight: 600 }}>{r.room_base}</div>
-                          <div style={{ fontSize: '12px', color: C.muted, textAlign: 'right', fontFamily: 'monospace' }}>${r.current_pc}</div>
-                          <div style={{ fontSize: '12px', color: C.text, textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>${r.new_pc}</div>
-                          <div style={{ fontSize: '11px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: diff > 0 ? C.increase : C.decrease }}>
-                            {diff > 0 ? '+' : ''}${diff}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  {message && (
-                    <div style={{ background: message.type === 'success' ? C.successBg : C.errorBg, border: `1px solid ${message.type === 'success' ? C.successBorder : C.errorBorder}`, borderRadius: '7px', padding: '10px 14px', marginBottom: '14px', fontSize: '13px', color: message.type === 'success' ? C.success : C.error }}>
-                      {message.text}
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <button onClick={handleApply} disabled={applying} style={{ padding: '9px 24px', fontSize: '13px', background: applying ? '#a09080' : C.btnPrimary, color: '#fff', border: 'none', borderRadius: '7px', cursor: applying ? 'not-allowed' : 'pointer', fontFamily: font, fontWeight: 600 }}>
-                      {applying ? 'Aplicando...' : `Confirmar y aplicar ${preview.length} cambios`}
-                    </button>
-                    <button onClick={() => setPreview([])} style={{ padding: '9px 16px', fontSize: '13px', background: 'transparent', color: C.muted, border: `1px solid ${C.inputBorder}`, borderRadius: '7px', cursor: 'pointer', fontFamily: font }}>
-                      Cancelar
-                    </button>
-                  </div>
-                </>
-              )})
-            )}
-
-            {message && !preview.length && (
-              <div style={{ background: message.type === 'success' ? C.successBg : C.errorBg, border: `1px solid ${message.type === 'success' ? C.successBorder : C.errorBorder}`, borderRadius: '7px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: message.type === 'success' ? C.success : C.error }}>
-                {message.text}
               </div>
+
+              {message && (
+                <div style={{
+                  marginTop: '12px', fontSize: '12px', padding: '8px 12px', borderRadius: '6px',
+                  background: message.type === 'success' ? C.successBg : C.errorBg,
+                  color: message.type === 'success' ? C.success : C.error,
+                  border: `1px solid ${message.type === 'success' ? C.successBorder : C.errorBorder}`,
+                }}>
+                  {message.text}
+                </div>
+              )}
+            </Section>
+
+            {preview.length > 0 && (
+              <Section title={`Vista Previa — ${preview.length} tarifas afectadas`}>
+                <div style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{
+                    padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600,
+                    background: isIncrease ? C.increaseBg : isDecrease ? C.decreaseBg : C.neutralBg,
+                    color: isIncrease ? C.increase : isDecrease ? C.decrease : C.neutral,
+                  }}>
+                    {isIncrease ? '↑' : isDecrease ? '↓' : '='} {pctNum > 0 ? '+' : ''}{pctNum}%
+                  </div>
+                  <button
+                    onClick={handleApply}
+                    disabled={applying}
+                    style={{
+                      padding: '7px 16px', fontSize: '12px', fontWeight: 600, fontFamily: font,
+                      background: applying ? '#a09080' : C.btnPrimary, color: '#fff',
+                      border: 'none', borderRadius: '7px', cursor: applying ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {applying ? 'Aplicando...' : 'Aplicar ajuste'}
+                  </button>
+                </div>
+
+                <div style={{ maxHeight: '300px', overflowY: 'auto', border: `0.5px solid ${C.cardBorder}`, borderRadius: '6px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                    <thead style={{ background: C.cardHead, position: 'sticky', top: 0 }}>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: C.text }}>Hotel</th>
+                        <th style={{ textAlign: 'center', padding: '8px 10px', fontWeight: 600, color: C.text }}>Base</th>
+                        <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 600, color: C.text }}>Actual</th>
+                        <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 600, color: C.text }}>Nueva</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.map((r, i) => (
+                        <tr key={i} style={{ borderTop: `0.5px solid ${C.cardBorder}` }}>
+                          <td style={{ padding: '8px 10px', color: C.text }}>{r.hotel_name}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', color: C.muted }}>{r.room_base}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: C.muted }}>${r.current_pc}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600, color: C.text }}>${r.new_pc}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Section>
             )}
 
-            {/* Historial */}
-            {Section({ title: 'Historial de ajustes', children: (
-              history.length === 0 ? (
-                <div style={{ fontSize: '12px', color: C.label, textAlign: 'center', padding: '20px 0' }}>No hay ajustes registrados todavía</div>
-              ) : (
-                <div style={{ border: `0.5px solid ${C.cardBorder}`, borderRadius: '8px', overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 80px 60px 70px 1fr', padding: '6px 12px', background: C.cardHead, borderBottom: `0.5px solid ${C.cardBorder}` }}>
-                    {['Fecha', 'Destino · Categ.', 'Temp.', 'Ajuste', 'Tarifas', 'Operador'].map((h, i) => (
-                      <div key={i} style={{ fontSize: '9px', fontWeight: 700, color: C.label, letterSpacing: '0.07em', textTransform: 'uppercase' as const }}>{h}</div>
-                    ))}
-                  </div>
-                  {history.map((adj, i) => {
-                    const isPos = adj.adjustment_pct > 0
-                    const dest = adj.destinations as any
-                    const date = new Date(adj.created_at)
-                    const dateStr = `${date.getDate().toString().padStart(2,'0')}/${(date.getMonth()+1).toString().padStart(2,'0')}/${date.getFullYear()} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`
-                    return (
-                      <div key={adj.id} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 80px 60px 70px 1fr', padding: '7px 12px', borderBottom: i < history.length - 1 ? `0.5px solid ${C.cardBorder}` : 'none', background: i % 2 === 0 ? '#fff' : C.bg, alignItems: 'center' }}>
-                        <div style={{ fontSize: '10px', color: C.muted, fontFamily: 'monospace' }}>{dateStr}</div>
-                        <div style={{ fontSize: '11px', color: C.text, fontWeight: 500 }}>
-                          {dest?.name} ({dest?.code})
-                          <span style={{ marginLeft: '6px', fontSize: '10px', color: C.muted }}>· {adj.category}</span>
-                          {adj.note && <div style={{ fontSize: '10px', color: C.label, marginTop: '1px' }}>{adj.note}</div>}
-                        </div>
-                        <div style={{ fontSize: '10px', color: C.muted }}>26-27</div>
-                        <div style={{ fontSize: '12px', fontWeight: 700, color: isPos ? C.increase : C.decrease }}>
-                          {isPos ? '+' : ''}{adj.adjustment_pct}%
-                        </div>
-                        <div style={{ fontSize: '11px', color: C.muted }}>{adj.rates_affected} PC</div>
-                        <div style={{ fontSize: '10px', color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adj.applied_email}</div>
-                      </div>
-                    )
-                  })}
+            <Section title="Historial de ajustes">
+              {history.length === 0 ? (
+                <div style={{ fontSize: '12px', color: C.muted, textAlign: 'center', padding: '20px' }}>
+                  No hay ajustes registrados
                 </div>
-              )
-            )})}
+              ) : (
+                <div style={{ maxHeight: '300px', overflowY: 'auto', border: `0.5px solid ${C.cardBorder}`, borderRadius: '6px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                    <thead style={{ background: C.cardHead, position: 'sticky', top: 0 }}>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: C.text }}>Fecha</th>
+                        <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: C.text }}>Destino</th>
+                        <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: C.text }}>Categoría</th>
+                        <th style={{ textAlign: 'center', padding: '8px 10px', fontWeight: 600, color: C.text }}>Ajuste</th>
+                        <th style={{ textAlign: 'center', padding: '8px 10px', fontWeight: 600, color: C.text }}>Afectadas</th>
+                        <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: C.text }}>Usuario</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.map((adj, i) => {
+                        const isInc = adj.adjustment_pct > 0
+                        const isDec = adj.adjustment_pct < 0
+                        return (
+                          <tr key={i} style={{ borderTop: `0.5px solid ${C.cardBorder}` }}>
+                            <td style={{ padding: '8px 10px', color: C.muted }}>
+                              {new Date(adj.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            </td>
+                            <td style={{ padding: '8px 10px', color: C.text }}>{adj.destinations?.name}</td>
+                            <td style={{ padding: '8px 10px', color: C.muted }}>{adj.category}</td>
+                            <td style={{
+                              padding: '8px 10px', textAlign: 'center', fontWeight: 600,
+                              color: isInc ? C.increase : isDec ? C.decrease : C.neutral
+                            }}>
+                              {adj.adjustment_pct > 0 ? '+' : ''}{adj.adjustment_pct}%
+                            </td>
+                            <td style={{ padding: '8px 10px', textAlign: 'center', color: C.muted }}>{adj.rates_affected}</td>
+                            <td style={{ padding: '8px 10px', color: C.muted, fontSize: '10px' }}>{adj.applied_email}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
 
           </div>
         </div>
