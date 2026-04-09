@@ -144,11 +144,10 @@ export async function POST(req: Request) {
         : String(row.DATE_TO).slice(0, 10)
 
       for (const hotel of hotelList) {
-        // ✅ FIX 2: SOD NULL = insertar (backward compatibility)
-        // SOD = 0 = NO insertar (explicitly unavailable)
-        // SOD = 1 = insertar (available)
+        // TEMPORALMENTE SIN FILTRO SOD - para ver qué hay en TP
+        // TODO: Revisar lógica SOD con TourPlan
         
-        if (row.SS > 0 && row.SS < 9000 && (row.SINGLE_AVAIL === null || row.SINGLE_AVAIL === 1)) {
+        if (row.SS > 0 && row.SS < 9000) {
           tpRatesRows.push({
             hotel_id: hotel.id,
             supplier_code: parseInt(supplierCode),
@@ -164,7 +163,7 @@ export async function POST(req: Request) {
           })
         }
         
-        if (row.TW > 0 && row.TW < 9000 && (row.TWIN_AVAIL === null || row.DOUBLE_AVAIL === null || row.TWIN_AVAIL === 1 || row.DOUBLE_AVAIL === 1)) {
+        if (row.TW > 0 && row.TW < 9000) {
           tpRatesRows.push({
             hotel_id: hotel.id,
             supplier_code: parseInt(supplierCode),
@@ -180,7 +179,7 @@ export async function POST(req: Request) {
           })
         }
         
-        if (row.TR > 0 && row.TR < 9000 && (row.TRIPLE_AVAIL === null || row.TRIPLE_AVAIL === 1)) {
+        if (row.TR > 0 && row.TR < 9000) {
           tpRatesRows.push({
             hotel_id: hotel.id,
             supplier_code: parseInt(supplierCode),
@@ -267,9 +266,10 @@ export async function POST(req: Request) {
         ? row.DATE_TO.toISOString().split('T')[0]
         : String(row.DATE_TO).slice(0, 10)
 
-      // ✅ FIX 3: Aplicar mismo filtro SOD a PC rates
+      // TEMPORALMENTE SIN FILTRO SOD - para ver qué hay en TP
+      // TODO: Revisar lógica SOD con TourPlan
       
-      if (row.SS > 0 && row.SS < 9000 && (row.SINGLE_AVAIL === null || row.SINGLE_AVAIL === 1)) {
+      if (row.SS > 0 && row.SS < 9000) {
         tpPcRatesRows.push({
           dest_code: row.dest,
           category: row.category,
@@ -285,7 +285,7 @@ export async function POST(req: Request) {
         })
       }
       
-      if (row.TW > 0 && row.TW < 9000 && (row.TWIN_AVAIL === null || row.DOUBLE_AVAIL === null || row.TWIN_AVAIL === 1 || row.DOUBLE_AVAIL === 1)) {
+      if (row.TW > 0 && row.TW < 9000) {
         tpPcRatesRows.push({
           dest_code: row.dest,
           category: row.category,
@@ -301,7 +301,7 @@ export async function POST(req: Request) {
         })
       }
       
-      if (row.TR > 0 && row.TR < 9000 && (row.TRIPLE_AVAIL === null || row.TRIPLE_AVAIL === 1)) {
+      if (row.TR > 0 && row.TR < 9000) {
         tpPcRatesRows.push({
           dest_code: row.dest,
           category: row.category,
