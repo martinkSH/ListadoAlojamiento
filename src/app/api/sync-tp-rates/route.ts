@@ -227,29 +227,31 @@ export async function POST(req: Request) {
     let pcRows: any[] = []
     for (const pair of Array.from(destCatPairs)) {
       const [dest, cat] = pair.split('__')
-      // Escapar comillas simples en cat para evitar SQL injection
-      const catEscaped = cat.replace(/'/g, "''")
       
-      const result = await pool.request().query(`
-        SELECT
-          OPT.SUPPLIER, OPT.CODE, OPT.DESCRIPTION,
-          OSR.DATE_FROM, OSR.DATE_TO, OSR.PROV, OSR.BUY_CURRENCY,
-          OPD.SS, OPD.TW, OPD.TR,
-          SOD.SINGLE_AVAIL, SOD.TWIN_AVAIL, SOD.DOUBLE_AVAIL, SOD.TRIPLE_AVAIL
-        FROM OPT
-        JOIN OSR ON OSR.OPT_ID = OPT.OPT_ID
-        JOIN OPD ON OPD.OSR_ID = OSR.OSR_ID
-        LEFT JOIN SOD ON SOD.SOD_ID = OPT.SOD_ID
-        WHERE
-          OPT.SUPPLIER = '${dest}'
-          AND OPT.SERVICE = 'AC'
-          AND OPT.DELETED = 0
-          AND OSR.PRICE_CODE = 'PC'
-          AND OPD.RATE_TYPE = 'FC'
-          AND OPD.AGE_CATEGORY = 'AD'
-          AND OSR.DATE_TO >= '${todayTP}'
-          AND OPT.DESCRIPTION LIKE '%${catEscaped}%'
-      `)
+      const result = await pool.request()
+        .input('dest', sql.VarChar, dest)
+        .input('cat', sql.VarChar, cat)
+        .input('todayTP', sql.VarChar, todayTP)
+        .query(`
+          SELECT
+            OPT.SUPPLIER, OPT.CODE, OPT.DESCRIPTION,
+            OSR.DATE_FROM, OSR.DATE_TO, OSR.PROV, OSR.BUY_CURRENCY,
+            OPD.SS, OPD.TW, OPD.TR,
+            SOD.SINGLE_AVAIL, SOD.TWIN_AVAIL, SOD.DOUBLE_AVAIL, SOD.TRIPLE_AVAIL
+          FROM OPT
+          JOIN OSR ON OSR.OPT_ID = OPT.OPT_ID
+          JOIN OPD ON OPD.OSR_ID = OSR.OSR_ID
+          LEFT JOIN SOD ON SOD.SOD_ID = OPT.SOD_ID
+          WHERE
+            OPT.SUPPLIER = @dest
+            AND OPT.SERVICE = 'AC'
+            AND OPT.DELETED = 0
+            AND OSR.PRICE_CODE = 'PC'
+            AND OPD.RATE_TYPE = 'FC'
+            AND OPD.AGE_CATEGORY = 'AD'
+            AND OSR.DATE_TO >= @todayTP
+            AND OPT.DESCRIPTION LIKE '%' + @cat + '%'
+        `)
       pcRows = pcRows.concat(result.recordset.map((r: any) => ({ ...r, dest, category: cat })))
     }
 
