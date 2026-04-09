@@ -227,6 +227,9 @@ export async function POST(req: Request) {
     let pcRows: any[] = []
     for (const pair of Array.from(destCatPairs)) {
       const [dest, cat] = pair.split('__')
+      // Escapar comillas simples en cat para evitar SQL injection
+      const catEscaped = cat.replace(/'/g, "''")
+      
       const result = await pool.request().query(`
         SELECT
           OPT.SUPPLIER, OPT.CODE, OPT.DESCRIPTION,
@@ -245,7 +248,7 @@ export async function POST(req: Request) {
           AND OPD.RATE_TYPE = 'FC'
           AND OPD.AGE_CATEGORY = 'AD'
           AND OSR.DATE_TO >= '${todayTP}'
-          AND OPT.DESCRIPTION LIKE '%${cat}%'
+          AND OPT.DESCRIPTION LIKE '%${catEscaped}%'
       `)
       pcRows = pcRows.concat(result.recordset.map((r: any) => ({ ...r, dest, category: cat })))
     }
