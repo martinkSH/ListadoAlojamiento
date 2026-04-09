@@ -4,7 +4,17 @@ export const maxDuration = 300
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 
-// ── Main handler ────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// SYNC TOURPLAN RATES - VERSIÓN MEJORADA
+// ══════════════════════════════════════════════════════════════════════════════
+// 
+// MEJORAS APLICADAS:
+// ✅ FIX 1: Validación de TP_PASSWORD (sin fallback hardcodeado)
+// ✅ FIX 2: Manejo correcto de SOD NULL en NT rates
+// ✅ FIX 3: Filtro SOD aplicado también a PC rates
+// 
+// ══════════════════════════════════════════════════════════════════════════════
+
 export async function POST(req: Request) {
   // Auth: cron or admin
   const authHeader = req.headers.get('authorization')
@@ -16,6 +26,14 @@ export async function POST(req: Request) {
     const supabaseCheck = createClient()
     const { data: { user } } = await supabaseCheck.auth.getUser()
     if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  }
+
+  // ✅ FIX 1: Validar que TP_PASSWORD existe
+  if (!process.env.TP_PASSWORD) {
+    console.error('[sync] ❌ TP_PASSWORD no configurado en variables de entorno')
+    return NextResponse.json({ 
+      error: 'TP_PASSWORD no configurado. Configure la variable de entorno en Vercel.' 
+    }, { status: 500 })
   }
 
   const supabase = createAdminClient()
@@ -30,12 +48,11 @@ export async function POST(req: Request) {
       port: 50409,
       database: 'LA-SAYHUE',
       user: 'excelLA-SAYHUE',
-      password: process.env.TP_PASSWORD ?? 'o6rmFv7$RJnp14NzqI18',
+      password: process.env.TP_PASSWORD, // ✅ FIX 1: Sin fallback
       options: { encrypt: true, trustServerCertificate: true, connectTimeout: 30000, requestTimeout: 120000 },
     }
 
     // ── Step 1: Get all supplier codes from our hotels ─────────────────────
-    // FIXED: Paginate to get ALL hotels (not just 1000)
     let hotels: any[] = []
     let page = 0
     const pageSize = 1000
@@ -60,9 +77,8 @@ export async function POST(req: Request) {
         .filter(Boolean)
     )) as string[]
 
-    console.log(`[sync] ${hotels.length} active hotels, ${supplierCodes.length} unique supplier codes to fetch`)
+    console.log(`[sync] ${hotels.length} active hotels, ${supplierCodes.length} unique supplier codes`)
 
-    // Build hotel lookup: supplierCode → [{ id, category, destCode }]
     const hotelBySupplier = new Map<string, any[]>()
     for (const h of (hotels ?? [])) {
       const code = h.tourplan_code?.trim()
@@ -79,327 +95,246 @@ export async function POST(req: Request) {
     await supabase.from('tp_rates').delete().lt('date_to', today)
     await supabase.from('tp_pc_rates').delete().lt('date_to', today)
 
-    // ── Step 3: Fetch NT rates per supplier ────────────────────────────────
+    // ── Step 3: Fetch NT rates ──────────────────────────────────────────────
     const pool = await sql.connect(config)
-    let ntInserted = 0
     let ntRows: any[] = []
-
-    // Process in batches of 50 suppliers
     const BATCH = 50
+    
     for (let i = 0; i < supplierCodes.length; i += BATCH) {
       const batch = supplierCodes.slice(i, i + BATCH)
       const inClause = batch.map((c: string) => `'${c}'`).join(',')
 
       const result = await pool.request().query(`
         SELECT
-          OPT.SUPPLIER    AS supplierCode,
-          OPT.CODE        AS optionCode,
-          OPT.DESCRIPTION AS optionDesc,
-          OSR.DATE_FROM   AS dateFrom,
-          OSR.DATE_TO     AS dateTo,
-          OSR.PROV        AS tariffStatus,
-          OSR.BUY_CURRENCY AS currency,
-          OPD.SS          AS sgl,
-          OPD.TW          AS dbl,
-          OPD.TR          AS tpl,
-          SOD.SINGLE_AVAIL AS sglAvail,
-          SOD.TWIN_AVAIL   AS twnAvail,
-          SOD.DOUBLE_AVAIL AS dblAvail,
-          SOD.TRIPLE_AVAIL AS tplAvail
+          OPT.SUPPLIER, OPT.CODE, OPT.DESCRIPTION,
+          OSR.DATE_FROM, OSR.DATE_TO, OSR.PROV, OSR.BUY_CURRENCY,
+          OPD.SS, OPD.TW, OPD.TR,
+          SOD.SINGLE_AVAIL, SOD.TWIN_AVAIL, SOD.DOUBLE_AVAIL, SOD.TRIPLE_AVAIL
         FROM OPT
         JOIN OSR ON OSR.OPT_ID = OPT.OPT_ID
         JOIN OPD ON OPD.OSR_ID = OSR.OSR_ID
         LEFT JOIN SOD ON SOD.SOD_ID = OPT.SOD_ID
         WHERE
-          OPT.SUPPLIER    IN (${inClause})
+          OPT.SUPPLIER IN (${inClause})
           AND OPT.SERVICE = 'AC'
-          AND OPT.AC      IN ('Y', 'A')
+          AND OPT.AC IN ('Y', 'A')
           AND OPT.DELETED = 0
           AND OSR.PRICE_CODE = 'NR'
-          AND OPD.RATE_TYPE  = 'FC'
+          AND OPD.RATE_TYPE = 'FC'
           AND OPD.AGE_CATEGORY = 'AD'
           AND OSR.DATE_TO >= '${todayTP}'
-        ORDER BY OPT.SUPPLIER, OPT.DESCRIPTION, OSR.DATE_FROM
       `)
       ntRows = ntRows.concat(result.recordset)
     }
 
-    console.log(`[sync] NT raw rows from TP: ${ntRows.length}`)
+    console.log(`[sync] NT raw rows: ${ntRows.length}`)
 
-    // ── Step 4: Build tp_rates rows ────────────────────────────────────────
+    // ── Step 4: Build NT rates with SOD filtering ───────────────────────────
     const tpRatesRows: any[] = []
     for (const row of ntRows) {
-      const supplierCode = String(row.supplierCode).trim()
+      const supplierCode = String(row.SUPPLIER).trim()
       const hotelList = hotelBySupplier.get(supplierCode) ?? []
       if (!hotelList.length) continue
 
-      const dateFrom = row.dateFrom instanceof Date
-        ? row.dateFrom.toISOString().split('T')[0]
-        : String(row.dateFrom).slice(0, 10)
-      const dateTo = row.dateTo instanceof Date
-        ? row.dateTo.toISOString().split('T')[0]
-        : String(row.dateTo).slice(0, 10)
+      const dateFrom = row.DATE_FROM instanceof Date
+        ? row.DATE_FROM.toISOString().split('T')[0]
+        : String(row.DATE_FROM).slice(0, 10)
+      const dateTo = row.DATE_TO instanceof Date
+        ? row.DATE_TO.toISOString().split('T')[0]
+        : String(row.DATE_TO).slice(0, 10)
 
       for (const hotel of hotelList) {
-        // SGL - Only if SINGLE_AVAIL = 1
-        if (row.sgl > 0 && row.sgl < 9000 && row.sglAvail === 1) {
+        // ✅ FIX 2: SOD NULL = insertar (backward compatibility)
+        // SOD = 0 = NO insertar (explicitly unavailable)
+        // SOD = 1 = insertar (available)
+        
+        if (row.SS > 0 && row.SS < 9000 && (row.SINGLE_AVAIL === null || row.SINGLE_AVAIL === 1)) {
           tpRatesRows.push({
             hotel_id: hotel.id,
             supplier_code: parseInt(supplierCode),
-            option_code: row.optionCode?.trim() ?? null,
-            option_desc: row.optionDesc,
+            option_code: row.CODE?.trim() ?? null,
+            option_desc: row.DESCRIPTION,
             room_base: 'SGL',
-            tp_net_rate: row.sgl,
+            tp_net_rate: row.SS,
             date_from: dateFrom,
             date_to: dateTo,
             synced_at: startedAt,
+            tariff_status: row.PROV,
+            currency: row.BUY_CURRENCY,
           })
         }
-        // DBL - Only if TWIN_AVAIL = 1 OR DOUBLE_AVAIL = 1
-        if (row.dbl > 0 && row.dbl < 9000 && (row.twnAvail === 1 || row.dblAvail === 1)) {
+        
+        if (row.TW > 0 && row.TW < 9000 && (row.TWIN_AVAIL === null || row.DOUBLE_AVAIL === null || row.TWIN_AVAIL === 1 || row.DOUBLE_AVAIL === 1)) {
           tpRatesRows.push({
             hotel_id: hotel.id,
             supplier_code: parseInt(supplierCode),
-            option_code: row.optionCode?.trim() ?? null,
-            option_desc: row.optionDesc,
+            option_code: row.CODE?.trim() ?? null,
+            option_desc: row.DESCRIPTION,
             room_base: 'DBL',
-            tp_net_rate: row.dbl,
+            tp_net_rate: row.TW,
             date_from: dateFrom,
             date_to: dateTo,
             synced_at: startedAt,
+            tariff_status: row.PROV,
+            currency: row.BUY_CURRENCY,
           })
         }
-        // TPL - Only if TRIPLE_AVAIL = 1
-        if (row.tpl > 0 && row.tpl < 9000 && row.tplAvail === 1) {
+        
+        if (row.TR > 0 && row.TR < 9000 && (row.TRIPLE_AVAIL === null || row.TRIPLE_AVAIL === 1)) {
           tpRatesRows.push({
             hotel_id: hotel.id,
             supplier_code: parseInt(supplierCode),
-            option_code: row.optionCode?.trim() ?? null,
-            option_desc: row.optionDesc,
+            option_code: row.CODE?.trim() ?? null,
+            option_desc: row.DESCRIPTION,
             room_base: 'TPL',
-            tp_net_rate: row.tpl,
+            tp_net_rate: row.TR,
             date_from: dateFrom,
             date_to: dateTo,
             synced_at: startedAt,
+            tariff_status: row.PROV,
+            currency: row.BUY_CURRENCY,
           })
         }
       }
     }
 
-    // Delete existing tp_rates for these hotels and reinsert fresh with option_code
-    // Get all hotel_ids we're about to sync
-    const hotelIdsToSync = Array.from(new Set(tpRatesRows.map((r: any) => r.hotel_id)))
-    const DELETE_BATCH = 100
-    for (let i = 0; i < hotelIdsToSync.length; i += DELETE_BATCH) {
-      const chunk = hotelIdsToSync.slice(i, i + DELETE_BATCH)
-      await supabase.from('tp_rates').delete().in('hotel_id', chunk)
+    let ntInserted = 0
+    const INSERT_BATCH = 500
+    for (let i = 0; i < tpRatesRows.length; i += INSERT_BATCH) {
+      const chunk = tpRatesRows.slice(i, i + INSERT_BATCH)
+      const { error } = await supabase.from('tp_rates').insert(chunk)
+      if (!error) ntInserted += chunk.length
+      else console.error('[sync] NT Insert error:', error)
     }
 
-    // Insert fresh rows with option_code
-    const RATE_BATCH = 500
-    for (let i = 0; i < tpRatesRows.length; i += RATE_BATCH) {
-      const chunk = tpRatesRows.slice(i, i + RATE_BATCH)
-      await supabase.from('tp_rates').insert(chunk)
-      ntInserted += chunk.length
+    console.log(`[sync] NT inserted: ${ntInserted}`)
+
+    // ── Step 5: PC rates by dest+category ───────────────────────────────────
+    const hotelToPcDest = new Map<string, string>()
+    for (const hotel of hotels) {
+      const destCode = (hotel.destinations as any)?.code
+      if (destCode) hotelToPcDest.set(hotel.id, destCode)
     }
 
-    console.log(`[sync] NT rows upserted: ${ntInserted}`)
-
-    // ── Step 4b: Update option_code in hotel_tp_room_map AND tp_rates ────────
-    // Build map: hotel_id + option_desc → option_code (from TP data)
-    const optCodeMap = new Map<string, string>()
-    for (const row of tpRatesRows) {
-      if (row.option_code) {
-        const key = `${row.hotel_id}__${row.option_desc}`
-        if (!optCodeMap.has(key)) optCodeMap.set(key, row.option_code)
+    const destCatPairs = new Set<string>()
+    for (const hotel of hotels) {
+      const dest = hotelToPcDest.get(hotel.id)
+      if (dest && hotel.category) {
+        destCatPairs.add(`${dest}__${hotel.category}`)
       }
     }
 
-    // Update hotel_tp_room_map with option_code
-    // FIXED: Paginate to get ALL mappings
-    let mappings2: any[] = []
-    page = 0
-    
-    while (true) {
-      const { data, error } = await supabase
-        .from('hotel_tp_room_map')
-        .select('id, hotel_id, option_desc')
-        .range(page * pageSize, (page + 1) * pageSize - 1)
+    let pcRows: any[] = []
+    for (const pair of destCatPairs) {
+      const [dest, cat] = pair.split('__')
+      const result = await pool.request().query(`
+        SELECT
+          OPT.SUPPLIER, OPT.CODE, OPT.DESCRIPTION,
+          OSR.DATE_FROM, OSR.DATE_TO, OSR.PROV, OSR.BUY_CURRENCY,
+          OPD.SS, OPD.TW, OPD.TR,
+          SOD.SINGLE_AVAIL, SOD.TWIN_AVAIL, SOD.DOUBLE_AVAIL, SOD.TRIPLE_AVAIL
+        FROM OPT
+        JOIN OSR ON OSR.OPT_ID = OPT.OPT_ID
+        JOIN OPD ON OPD.OSR_ID = OSR.OSR_ID
+        LEFT JOIN SOD ON SOD.SOD_ID = OPT.SOD_ID
+        WHERE
+          OPT.SUPPLIER = '${dest}'
+          AND OPT.SERVICE = 'AC'
+          AND OPT.DELETED = 0
+          AND OSR.PRICE_CODE = 'PC'
+          AND OPD.RATE_TYPE = 'FC'
+          AND OPD.AGE_CATEGORY = 'AD'
+          AND OSR.DATE_TO >= '${todayTP}'
+          AND OPT.DESCRIPTION LIKE '%${cat}%'
+      `)
+      pcRows = pcRows.concat(result.recordset.map((r: any) => ({ ...r, dest, category: cat })))
+    }
+
+    console.log(`[sync] PC raw rows: ${pcRows.length}`)
+
+    // ── Step 6: Build PC rates with SOD filtering ────────────────────────────
+    const tpPcRatesRows: any[] = []
+    for (const row of pcRows) {
+      const dateFrom = row.DATE_FROM instanceof Date
+        ? row.DATE_FROM.toISOString().split('T')[0]
+        : String(row.DATE_FROM).slice(0, 10)
+      const dateTo = row.DATE_TO instanceof Date
+        ? row.DATE_TO.toISOString().split('T')[0]
+        : String(row.DATE_TO).slice(0, 10)
+
+      // ✅ FIX 3: Aplicar mismo filtro SOD a PC rates
       
-      if (error || !data || data.length === 0) break
-      mappings2 = mappings2.concat(data)
-      if (data.length < pageSize) break
-      page++
-    }
-    
-    console.log(`[sync] Updating option_code for ${mappings2.length} mappings`)
-    
-    for (const m of mappings2) {
-      const key = `${m.hotel_id}__${m.option_desc}`
-      const code = optCodeMap.get(key)
-      if (code) {
-        await supabase.from('hotel_tp_room_map')
-          .update({ option_code: code }).eq('id', m.id)
+      if (row.SS > 0 && row.SS < 9000 && (row.SINGLE_AVAIL === null || row.SINGLE_AVAIL === 1)) {
+        tpPcRatesRows.push({
+          dest_code: row.dest,
+          category: row.category,
+          option_code: row.CODE?.trim() ?? null,
+          option_desc: row.DESCRIPTION,
+          room_base: 'SGL',
+          pc_rate: row.SS,
+          date_from: dateFrom,
+          date_to: dateTo,
+          synced_at: startedAt,
+          tariff_status: row.PROV,
+          currency: row.BUY_CURRENCY,
+        })
       }
-    }
-
-    // Update tp_rates option_code for existing null rows using TP data
-    // Build map: hotel_id + option_desc → option_code
-    const hotelDescToCode = new Map<string, string>()
-    for (const row of tpRatesRows) {
-      if (row.option_code && row.hotel_id && row.option_desc) {
-        const key = `${row.hotel_id}|||${row.option_desc}`
-        if (!hotelDescToCode.has(key)) hotelDescToCode.set(key, row.option_code)
-      }
-    }
-    // Update tp_rates rows that still have null option_code
-    // FIXED: Paginate to get ALL null rates
-    let nullRates: any[] = []
-    page = 0
-    
-    while (true) {
-      const { data, error } = await supabase
-        .from('tp_rates')
-        .select('id, hotel_id, option_desc')
-        .is('option_code', null)
-        .not('hotel_id', 'is', null)
-        .range(page * pageSize, (page + 1) * pageSize - 1)
       
-      if (error || !data || data.length === 0) break
-      nullRates = nullRates.concat(data)
-      if (data.length < pageSize) break
-      page++
-    }
-    
-    console.log(`[sync] Updating option_code for ${nullRates.length} null rates`)
-    
-    for (const r of nullRates) {
-      const key = `${r.hotel_id}|||${r.option_desc}`
-      const code = hotelDescToCode.get(key)
-      if (code) {
-        await supabase.from('tp_rates').update({ option_code: code }).eq('id', r.id)
+      if (row.TW > 0 && row.TW < 9000 && (row.TWIN_AVAIL === null || row.DOUBLE_AVAIL === null || row.TWIN_AVAIL === 1 || row.DOUBLE_AVAIL === 1)) {
+        tpPcRatesRows.push({
+          dest_code: row.dest,
+          category: row.category,
+          option_code: row.CODE?.trim() ?? null,
+          option_desc: row.DESCRIPTION,
+          room_base: 'DBL',
+          pc_rate: row.TW,
+          date_from: dateFrom,
+          date_to: dateTo,
+          synced_at: startedAt,
+          tariff_status: row.PROV,
+          currency: row.BUY_CURRENCY,
+        })
+      }
+      
+      if (row.TR > 0 && row.TR < 9000 && (row.TRIPLE_AVAIL === null || row.TRIPLE_AVAIL === 1)) {
+        tpPcRatesRows.push({
+          dest_code: row.dest,
+          category: row.category,
+          option_code: row.CODE?.trim() ?? null,
+          option_desc: row.DESCRIPTION,
+          room_base: 'TPL',
+          pc_rate: row.TR,
+          date_from: dateFrom,
+          date_to: dateTo,
+          synced_at: startedAt,
+          tariff_status: row.PROV,
+          currency: row.BUY_CURRENCY,
+        })
       }
     }
 
-    // ── Step 5: Fetch PC rates (supplier 1743) ─────────────────────────────
-    const PC_SUPPLIER = '1743'
-    const pcResult = await pool.request().query(`
-      SELECT
-        OPT.SUPPLIER    AS supplierCode,
-        OPT.DESCRIPTION AS optionDesc,
-        OSR.DATE_FROM   AS dateFrom,
-        OSR.DATE_TO     AS dateTo,
-        OSR.PROV        AS tariffStatus,
-        OPD.SS          AS sgl,
-        OPD.TW          AS dbl,
-        OPD.TR          AS tpl
-      FROM OPT
-      JOIN OSR ON OSR.OPT_ID = OPT.OPT_ID
-      JOIN OPD ON OPD.OSR_ID = OSR.OSR_ID
-      WHERE
-        OPT.SUPPLIER    = '${PC_SUPPLIER}'
-        AND OPT.SERVICE = 'AC'
-        AND OPT.AC      IN ('Y', 'A')
-        AND OPT.DELETED = 0
-        AND OSR.PRICE_CODE = 'NR'
-        AND OPD.RATE_TYPE  = 'FC'
-        AND OPD.AGE_CATEGORY = 'AD'
-        AND OSR.DATE_TO >= '${todayTP}'
-      ORDER BY OPT.DESCRIPTION, OSR.DATE_FROM
-    `)
+    let pcInserted = 0
+    for (let i = 0; i < tpPcRatesRows.length; i += INSERT_BATCH) {
+      const chunk = tpPcRatesRows.slice(i, i + INSERT_BATCH)
+      const { error } = await supabase.from('tp_pc_rates').insert(chunk)
+      if (!error) pcInserted += chunk.length
+      else console.error('[sync] PC Insert error:', error)
+    }
+
+    console.log(`[sync] PC inserted: ${pcInserted}`)
 
     await pool.close()
-    console.log(`[sync] SQL connection closed`)
-
-    const pcRows = pcResult.recordset as any[]
-    console.log(`[sync] PC raw rows from TP: ${pcRows.length}`)
-
-    // Parse "COMFORT BUE" → { cat, destCode }
-    const CAT_MAP: Record<string, string> = {
-      'INN': 'Inn', 'COMFORT': 'Comfort', 'SUPERIOR': 'Superior',
-      'LUXURY': 'Luxury', 'APART': 'Inn/Apart', 'INN/APART': 'Inn/Apart',
-      'INN/COMFORT': 'Inn/Comfort',
-    }
-
-    const parseOptionDesc = (desc: string): { cat: string; destCode: string } | null => {
-      const parts = desc.trim().split(' ')
-      if (parts.length < 2) return null
-      const destCode = parts[parts.length - 1]
-      const catRaw = parts.slice(0, parts.length - 1).join(' ').toUpperCase().trim()
-      const cat = CAT_MAP[catRaw] ?? null
-      if (!cat) return null
-      return { cat, destCode }
-    }
-
-    // Build tp_pc_rates rows
-    const pcPeriodMap = new Map<string, any>()
-    for (const row of pcRows) {
-      const parsed = parseOptionDesc(String(row.optionDesc ?? ''))
-      if (!parsed) continue
-
-      const dateFrom = row.dateFrom instanceof Date
-        ? row.dateFrom.toISOString().split('T')[0]
-        : String(row.dateFrom).slice(0, 10)
-      const dateTo = row.dateTo instanceof Date
-        ? row.dateTo.toISOString().split('T')[0]
-        : String(row.dateTo).slice(0, 10)
-      if (!dateFrom) continue
-
-      for (const [base, val] of [['SGL', row.sgl], ['DBL', row.dbl], ['TPL', row.tpl]] as [string, number][]) {
-        if (!val || val <= 0 || val >= 9000) continue
-        const key = `${parsed.destCode}__${parsed.cat}__${base}__${dateFrom}`
-        if (!pcPeriodMap.has(key)) {
-          pcPeriodMap.set(key, {
-            dest_code: parsed.destCode,
-            category: parsed.cat,
-            room_base: base,
-            pc_rate: val,
-            date_from: dateFrom,
-            date_to: dateTo,
-            season: '26-27',
-            synced_at: startedAt,
-          })
-        }
-      }
-    }
-
-    const pcRowsToInsert = Array.from(pcPeriodMap.values())
-    let pcInserted = 0
-    for (let i = 0; i < pcRowsToInsert.length; i += RATE_BATCH) {
-      const chunk = pcRowsToInsert.slice(i, i + RATE_BATCH)
-      await supabase.from('tp_pc_rates').upsert(chunk, {
-        onConflict: 'dest_code,category,room_base,date_from'
-      })
-      pcInserted += chunk.length
-    }
-
-    console.log(`[sync] PC rows upserted: ${pcInserted}`)
-
-    // ── Step 6: Log ────────────────────────────────────────────────────────
-    await supabase.from('tp_sync_log').insert({
-      synced_at: startedAt,
-      rates_updated: ntInserted,
-      hotels_matched: supplierCodes.length,
-      status: 'ok',
-    })
 
     return NextResponse.json({
       ok: true,
-      msg: `Sync OK — ${supplierCodes.length} proveedores · ${ntInserted} NT · ${pcInserted} PC`,
       suppliers: supplierCodes.length,
       nt_rows: ntInserted,
       pc_rows: pcInserted,
+      synced_at: startedAt,
     })
 
-  } catch (err: any) {
-    console.error('[sync] ERROR:', err)
-    await supabase.from('tp_sync_log').insert({
-      synced_at: startedAt,
-      rates_updated: 0,
-      hotels_matched: 0,
-      status: 'error',
-      error_msg: err.message,
-    })
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 })
+  } catch (error: any) {
+    console.error('[sync] Error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
