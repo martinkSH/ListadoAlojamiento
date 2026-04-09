@@ -91,9 +91,11 @@ export async function POST(req: Request) {
       })
     }
 
-    // ── Step 2: Clean expired periods ──────────────────────────────────────
-    await supabase.from('tp_rates').delete().lt('date_to', today)
-    await supabase.from('tp_pc_rates').delete().lt('date_to', today)
+    // ── Step 2: Clean ALL rates before sync ────────────────────────────────
+    console.log('[sync] Cleaning all existing rates...')
+    await supabase.from('tp_rates').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    await supabase.from('tp_pc_rates').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    console.log('[sync] All rates cleaned')
 
     // ── Step 3: Fetch NT rates ──────────────────────────────────────────────
     const pool = await sql.connect(config)
@@ -157,6 +159,7 @@ export async function POST(req: Request) {
             tp_net_rate: row.SS,
             date_from: dateFrom,
             date_to: dateTo,
+            season: '26-27',
             synced_at: startedAt,
           })
         }
@@ -171,6 +174,7 @@ export async function POST(req: Request) {
             tp_net_rate: row.TW,
             date_from: dateFrom,
             date_to: dateTo,
+            season: '26-27',
             synced_at: startedAt,
           })
         }
@@ -185,6 +189,7 @@ export async function POST(req: Request) {
             tp_net_rate: row.TR,
             date_from: dateFrom,
             date_to: dateTo,
+            season: '26-27',
             synced_at: startedAt,
           })
         }
@@ -267,12 +272,11 @@ export async function POST(req: Request) {
         tpPcRatesRows.push({
           dest_code: row.dest,
           category: row.category,
-          option_code: row.CODE?.trim() ?? null,
-          option_desc: row.DESCRIPTION,
           room_base: 'SGL',
           pc_rate: row.SS,
           date_from: dateFrom,
           date_to: dateTo,
+          season: '26-27',
           synced_at: startedAt,
         })
       }
@@ -281,12 +285,11 @@ export async function POST(req: Request) {
         tpPcRatesRows.push({
           dest_code: row.dest,
           category: row.category,
-          option_code: row.CODE?.trim() ?? null,
-          option_desc: row.DESCRIPTION,
           room_base: 'DBL',
           pc_rate: row.TW,
           date_from: dateFrom,
           date_to: dateTo,
+          season: '26-27',
           synced_at: startedAt,
         })
       }
@@ -295,12 +298,11 @@ export async function POST(req: Request) {
         tpPcRatesRows.push({
           dest_code: row.dest,
           category: row.category,
-          option_code: row.CODE?.trim() ?? null,
-          option_desc: row.DESCRIPTION,
           room_base: 'TPL',
           pc_rate: row.TR,
           date_from: dateFrom,
           date_to: dateTo,
+          season: '26-27',
           synced_at: startedAt,
         })
       }
