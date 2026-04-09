@@ -158,8 +158,6 @@ export async function POST(req: Request) {
             date_from: dateFrom,
             date_to: dateTo,
             synced_at: startedAt,
-            tariff_status: row.PROV,
-            currency: row.BUY_CURRENCY,
           })
         }
         
@@ -174,8 +172,6 @@ export async function POST(req: Request) {
             date_from: dateFrom,
             date_to: dateTo,
             synced_at: startedAt,
-            tariff_status: row.PROV,
-            currency: row.BUY_CURRENCY,
           })
         }
         
@@ -190,8 +186,6 @@ export async function POST(req: Request) {
             date_from: dateFrom,
             date_to: dateTo,
             synced_at: startedAt,
-            tariff_status: row.PROV,
-            currency: row.BUY_CURRENCY,
           })
         }
       }
@@ -280,8 +274,6 @@ export async function POST(req: Request) {
           date_from: dateFrom,
           date_to: dateTo,
           synced_at: startedAt,
-          tariff_status: row.PROV,
-          currency: row.BUY_CURRENCY,
         })
       }
       
@@ -296,8 +288,6 @@ export async function POST(req: Request) {
           date_from: dateFrom,
           date_to: dateTo,
           synced_at: startedAt,
-          tariff_status: row.PROV,
-          currency: row.BUY_CURRENCY,
         })
       }
       
@@ -312,8 +302,6 @@ export async function POST(req: Request) {
           date_from: dateFrom,
           date_to: dateTo,
           synced_at: startedAt,
-          tariff_status: row.PROV,
-          currency: row.BUY_CURRENCY,
         })
       }
     }
