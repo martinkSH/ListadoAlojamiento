@@ -225,7 +225,7 @@ export async function POST(req: Request) {
     }
 
     let pcRows: any[] = []
-    for (const pair of destCatPairs) {
+    for (const pair of Array.from(destCatPairs)) {
       const [dest, cat] = pair.split('__')
       const result = await pool.request().query(`
         SELECT
